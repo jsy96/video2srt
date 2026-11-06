@@ -2,9 +2,10 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
+  <title>视频录音转文字</title>
   <link rel="stylesheet" href="../ui.css">
 </head>
-<body class="popup">
+<body class="panel">
   <header>
     <span class="logo">🎙</span>
     <div>
@@ -27,7 +28,7 @@
     <a href="#" id="clearLink" hidden>清除状态</a>
   </div>
   <p class="cfg" id="cfgLine"></p>
-  <p class="tip">先在标签页里播放视频，再点「开始」。录制与播放同步进行，中途别拖进度条；播完点「结束」。网页右侧有悬浮面板，同样的开始/结束按钮。快捷键可在「快捷键」里自定义。</p>
-  <script src="popup.js"></script>
+  <p class="tip">先在标签页里播放视频，再点「开始」。录制与播放同步进行，中途别拖进度条；播完点「结束」。本面板固定在侧边栏始终可见；用快捷键也能直接开始/结束（按键可在「快捷键」里自定义）。</p>
+  <script src="sidepanel.js"></script>
 </body>
 </html>

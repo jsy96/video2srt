@@ -1,12 +1,14 @@
 'use strict';
 
+// 侧边栏面板（唯一控制面板）：逻辑与原 popup 一致——状态轮询 + storage.session 监听，
+// 页面常驻侧边栏，随状态变化实时刷新
 var STATE_KEY = 'v2s_state';
 var lastState = { state: 'idle' };
 
 function $(s) { return document.querySelector(s); }
 
 function displayVersion() {
-  // 版本号唯一来源是 manifest.json：1.0.261106.3 → 显示 v1.0.261106-3
+  // 版本号唯一来源是 manifest.json：1.0.261106.4 → 显示 v1.0.261106-4
   var v = chrome.runtime.getManifest().version.split('.');
   $('#ver').textContent = 'v' + v.slice(0, 3).join('.') + '-' + (v[3] || '1');
 }

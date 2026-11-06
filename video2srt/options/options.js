@@ -9,8 +9,7 @@ var DEFAULT_CFG = {
   bitrate: 48,
   chunkMinutes: 20,
   forceOneX: true,
-  autoStopOnEnded: false,
-  showPanel: true
+  autoStopOnEnded: false
 };
 
 function $(s) { return document.querySelector(s); }
@@ -26,7 +25,6 @@ async function load() {
   $('#chunkMinutes').value = String(cfg.chunkMinutes || 20);
   $('#forceOneX').checked = cfg.forceOneX !== false;
   $('#autoStopOnEnded').checked = !!cfg.autoStopOnEnded;
-  $('#showPanel').checked = cfg.showPanel !== false;
 }
 
 function collect() {
@@ -38,8 +36,7 @@ function collect() {
     bitrate: Number($('#bitrate').value) || 48,
     chunkMinutes: Math.min(60, Math.max(5, Number($('#chunkMinutes').value) || 20)),
     forceOneX: $('#forceOneX').checked,
-    autoStopOnEnded: $('#autoStopOnEnded').checked,
-    showPanel: $('#showPanel').checked
+    autoStopOnEnded: $('#autoStopOnEnded').checked
   };
 }
 
