@@ -1,0 +1,10 @@
+# 安装器生成的 Claude Code 符号链接（平台相关，真实内容在 .agents/skills/）
+.claude/
+
+# Chrome 打包产物与打包私钥（绝不入库）
+*.crx
+*.pem
+
+# 本地环境
+node_modules/
+*.log
