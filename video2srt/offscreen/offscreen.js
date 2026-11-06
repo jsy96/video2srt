@@ -32,6 +32,22 @@ function postProgress(stage, detail, partialSrt) {
   chrome.runtime.sendMessage(msg, function () { void chrome.runtime.lastError; });
 }
 
+// 最近一次产物的暂存（IndexedDB，扩展同源、文档关闭后仍在，磁盘级容量），
+// 供侧边栏面板「保存 MP3/SRT」按钮随时重新保存；sidepanel.js 里有同款读取助手
+function idbSet(key, val) {
+  return new Promise(function (resolve, reject) {
+    var req = indexedDB.open('v2s', 1);
+    req.onupgradeneeded = function () { req.result.createObjectStore('last'); };
+    req.onsuccess = function () {
+      var db = req.result;
+      var tx = db.transaction('last', 'readwrite').objectStore('last').put(val, key);
+      tx.onsuccess = function () { db.close(); resolve(); };
+      tx.onerror = function () { db.close(); reject(tx.error); };
+    };
+    req.onerror = function () { reject(req.error); };
+  });
+}
+
 async function startCapture(msg) {
   if (recorder) return { ok: false, error: '已在录制中' };
   curCfg = msg.cfg || {};
@@ -138,6 +154,9 @@ async function finalize() {
   var files = [{ url: URL.createObjectURL(mp3Blob), filename: '视频转写/' + base + '.mp3' }];
   var note = '';
   var srtText = null;
+
+  // 暂存最近一次的 MP3 与文件名（失败不影响主流程，只是面板按钮暂时无货可存）
+  try { await idbSet('mp3', mp3Blob); await idbSet('base', base); } catch (e) {}
 
   if (curCfg && curCfg.apiKey && curCfg.baseUrl) {
     try {
@@ -297,14 +316,16 @@ function encodeMp3(pcm16, sampleRate, kbps, onProgress) {
 
 async function downloadFiles(files, note, srtText) {
   postProgress('保存文件…', note || '');
-  // 首选：在本文档内直接调 downloads API（blob URL 与本文档同源，一定可用）
+  // 首选：在本文档内直接调 downloads API（blob URL 与本文档同源，一定可用）；
+  // 用户在设置里勾选「弹框保存」时对应文件弹 Save As 框
+  var wantDialog = function (fn) { return /\.srt$/i.test(fn) ? !!(curCfg && curCfg.saveAsSrt) : !!(curCfg && curCfg.saveAsMp3); };
   var ids = [];
   var directOk = !!(chrome.downloads && chrome.downloads.download);
   if (directOk) {
     try {
       for (var i = 0; i < files.length; i++) {
         ids.push(await chrome.downloads.download({
-          url: files[i].url, filename: files[i].filename, saveAs: false, conflictAction: 'uniquify'
+          url: files[i].url, filename: files[i].filename, saveAs: wantDialog(files[i].filename), conflictAction: 'uniquify'
         }));
       }
     } catch (e) {

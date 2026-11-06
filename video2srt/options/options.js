@@ -10,7 +10,9 @@ var DEFAULT_CFG = {
   chunkMinutes: 20,
   forceOneX: true,
   autoStopOnEnded: false,
-  autoSkipAd: true
+  autoSkipAd: true,
+  saveAsMp3: false,
+  saveAsSrt: false
 };
 
 function $(s) { return document.querySelector(s); }
@@ -27,6 +29,8 @@ async function load() {
   $('#forceOneX').checked = cfg.forceOneX !== false;
   $('#autoStopOnEnded').checked = !!cfg.autoStopOnEnded;
   $('#autoSkipAd').checked = cfg.autoSkipAd !== false;
+  $('#saveAsMp3').checked = !!cfg.saveAsMp3;
+  $('#saveAsSrt').checked = !!cfg.saveAsSrt;
 }
 
 function collect() {
@@ -39,7 +43,9 @@ function collect() {
     chunkMinutes: Math.min(60, Math.max(5, Number($('#chunkMinutes').value) || 20)),
     forceOneX: $('#forceOneX').checked,
     autoStopOnEnded: $('#autoStopOnEnded').checked,
-    autoSkipAd: $('#autoSkipAd').checked
+    autoSkipAd: $('#autoSkipAd').checked,
+    saveAsMp3: $('#saveAsMp3').checked,
+    saveAsSrt: $('#saveAsSrt').checked
   };
 }
 

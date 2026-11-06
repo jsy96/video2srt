@@ -116,7 +116,14 @@ $('#forceLink').addEventListener('click', function (e) {
 function applySrt(text) {
   var box = $('#srtBox'), sec = $('#result');
   if (!box || !sec) return;
-  if (!text) { sec.hidden = true; box.value = ''; return; }
+  if (!text) {
+    sec.hidden = true;
+    box.value = '';
+    $('#copySrtBtn').disabled = true;
+    $('#copyTextBtn').disabled = true;
+    $('#saveBtn').disabled = true;
+    return;
+  }
   sec.hidden = false;
   // 只在用户本就停在底部时自动跟到最新（实时滚动）；主动上翻阅读时不打扰
   var atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 24;
@@ -124,6 +131,7 @@ function applySrt(text) {
   if (atBottom) box.scrollTop = box.scrollHeight;
   $('#copySrtBtn').disabled = false;
   $('#copyTextBtn').disabled = false;
+  $('#saveBtn').disabled = false;
 }
 
 async function loadSrt() {
@@ -149,6 +157,54 @@ $('#copySrtBtn').addEventListener('click', function () {
 });
 $('#copyTextBtn').addEventListener('click', function () {
   copyWithFeedback(this, function () { return V2S.srtToPlain($('#srtBox').value); });
+});
+
+// ---- 保存 MP3/SRT：MP3 取最近一次录制的暂存（IndexedDB），SRT 用编辑框当前内容 ----
+
+function idbGet(key) {
+  // 与 offscreen.js 的 idbSet 配对：同一个扩展源下的 'v2s' 库
+  return new Promise(function (resolve, reject) {
+    var req = indexedDB.open('v2s', 1);
+    req.onupgradeneeded = function () { req.result.createObjectStore('last'); };
+    req.onsuccess = function () {
+      var db = req.result;
+      var g = db.transaction('last').objectStore('last').get(key);
+      g.onsuccess = function () { db.close(); resolve(g.result); };
+      g.onerror = function () { db.close(); reject(g.error); };
+    };
+    req.onerror = function () { reject(req.error); };
+  });
+}
+
+$('#saveBtn').addEventListener('click', async function () {
+  var btn = this;
+  btn.disabled = true;
+  var old = btn.textContent;
+  try {
+    var base = (await idbGet('base')) || '';
+    var mp3 = await idbGet('mp3');
+    if (mp3) {
+      await chrome.downloads.download({
+        url: URL.createObjectURL(mp3),
+        filename: '视频转写/' + (base || 'recording') + '.mp3',
+        saveAs: true
+      });
+    }
+    var srt = $('#srtBox').value;
+    if (srt.trim()) {
+      // 与自动保存一致：BOM 头 + x-subrip MIME（防 Chrome 改扩展名、防记事本乱码）
+      var blob = new Blob(['﻿' + srt], { type: 'application/x-subrip' });
+      await chrome.downloads.download({
+        url: URL.createObjectURL(blob),
+        filename: '视频转写/' + (base || 'recording') + '.srt',
+        saveAs: true
+      });
+    }
+    btn.textContent = '⬇ 已弹出保存框';
+  } catch (e) {
+    btn.textContent = '✗ ' + ((e && e.message) || e);
+  }
+  setTimeout(function () { btn.textContent = old; btn.disabled = false; }, 1500);
 });
 
 displayVersion();

@@ -20,7 +20,9 @@ var DEFAULT_CFG = {
   chunkMinutes: 20,
   forceOneX: true,
   autoStopOnEnded: false,
-  autoSkipAd: true
+  autoSkipAd: true,
+  saveAsMp3: false,
+  saveAsSrt: false
 };
 
 async function getCfg() {
@@ -202,12 +204,15 @@ async function onStopCapture() {
 
 async function onFiles(msg) {
   if (msg.srt) await chrome.storage.local.set(objOf(LAST_SRT_KEY, msg.srt));
+  var cfg = await getCfg();
   var ids = [];
   var files = msg.files || [];
   for (var i = 0; i < files.length; i++) {
     try {
+      // 用户勾选「弹框保存」时对应文件弹 Save As 框（与 offscreen 直下路径同规则）
+      var dialog = /\.srt$/i.test(files[i].filename) ? !!cfg.saveAsSrt : !!cfg.saveAsMp3;
       ids.push(await chrome.downloads.download({
-        url: files[i].url, filename: files[i].filename, saveAs: false, conflictAction: 'uniquify'
+        url: files[i].url, filename: files[i].filename, saveAs: dialog, conflictAction: 'uniquify'
       }));
     } catch (e) { /* 单个失败继续下一个 */ }
   }
