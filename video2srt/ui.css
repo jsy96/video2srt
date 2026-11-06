@@ -1,0 +1,81 @@
+:root {
+  --bg: #f7f7fb;
+  --card: #ffffff;
+  --text: #1f2430;
+  --muted: #6b7280;
+  --brand: #5b4ee0;
+  --brand-dark: #4a3fc4;
+  --danger: #d0455b;
+  --ok: #1f9d61;
+  --border: #e5e7eb;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+}
+
+body.popup { width: 320px; padding: 14px; }
+
+header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+header .logo { font-size: 24px; }
+header h1 { font-size: 15px; margin: 0; }
+header .ver { font-size: 11px; color: var(--muted); }
+
+#status {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+#stateLine { font-size: 14px; font-weight: 600; }
+.detail { margin-top: 6px; font-size: 12px; color: var(--muted); word-break: break-all; white-space: pre-wrap; }
+
+button {
+  font: inherit;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+button.primary {
+  width: 100%;
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+  font-weight: 600;
+  padding: 10px;
+}
+button.primary:hover:not(:disabled) { background: var(--brand-dark); }
+button:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.row { margin-top: 10px; display: flex; gap: 12px; flex-wrap: wrap; }
+.row a { color: var(--brand); font-size: 12px; text-decoration: none; }
+.row a:hover { text-decoration: underline; }
+
+.cfg { margin: 10px 0 0; font-size: 12px; color: var(--muted); }
+.tip { margin: 8px 0 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
+
+/* ---------- 选项页 ---------- */
+main { max-width: 640px; margin: 0 auto; padding: 24px 16px 48px; }
+main h1 { font-size: 20px; }
+main h2 { font-size: 15px; margin: 24px 0 8px; }
+section { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-top: 12px; }
+label { display: block; margin: 10px 0; font-size: 13px; color: var(--text); }
+label.check { display: flex; align-items: center; gap: 8px; }
+input[type="text"], input[type="password"], input[type="number"], select {
+  display: block; width: 100%; margin-top: 4px;
+  font: inherit; padding: 7px 10px;
+  border: 1px solid var(--border); border-radius: 8px; background: #fff;
+}
+label.check input { width: auto; margin: 0; }
+.hint { font-size: 12px; color: var(--muted); line-height: 1.6; }
+#status { margin-left: 8px; font-size: 13px; }

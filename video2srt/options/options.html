@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>video2srt 设置</title>
+  <link rel="stylesheet" href="../ui.css">
+</head>
+<body>
+<main>
+  <h1>视频号录音转写 · 设置</h1>
+
+  <section>
+    <h2>转写 API（OpenAI 兼容 /audio/transcriptions 接口）</h2>
+    <label>API Base URL
+      <input id="baseUrl" type="text" placeholder="https://api.siliconflow.cn/v1">
+    </label>
+    <label>API Key（只保存在本机浏览器 storage，不进代码、不联网上报）
+      <input id="apiKey" type="password" placeholder="sk-...">
+    </label>
+    <label>模型名（以你的服务商模型列表为准）
+      <input id="model" type="text" list="modelList">
+      <datalist id="modelList">
+        <option>FunAudioLLM/SenseVoiceSmall</option>
+        <option>openai/whisper-large-v3</option>
+        <option>whisper-1</option>
+      </datalist>
+    </label>
+    <label>语言（留空 = 自动检测；可填 zh / en 等）
+      <input id="language" type="text" placeholder="zh">
+    </label>
+    <p class="hint">
+      接口需兼容 OpenAI 的 <code>POST /audio/transcriptions</code>：返回 verbose_json（带分段时间戳）时生成精确 SRT；
+      只返回纯文本时按句切分并按时长估算时间轴。国内可用硅基流动（siliconflow.cn），也可自建兼容网关。
+    </p>
+    <div class="row">
+      <button id="saveBtn" class="primary" style="width:auto">保存</button>
+      <button id="testBtn">测试连接</button>
+      <span id="status"></span>
+    </div>
+  </section>
+
+  <section>
+    <h2>录制与导出</h2>
+    <label>MP3 码率
+      <select id="bitrate">
+        <option value="32">32 kbps（体积最小）</option>
+        <option value="48" selected>48 kbps（推荐）</option>
+        <option value="64">64 kbps</option>
+      </select>
+      <span class="hint">单声道 16 kHz，语音转写与收听足够</span>
+    </label>
+    <label>单次转写分段（分钟）
+      <input id="chunkMinutes" type="number" min="5" max="60" value="20">
+      <span class="hint">超过该时长的录音会自动在静音处切分段转写、再合并成一条 SRT（规避 API 单文件大小限制）</span>
+    </label>
+    <label class="check"><input id="forceOneX" type="checkbox" checked> 录制开始时把视频强制为 1x 倍速（保证 SRT 时间轴与原视频对齐）</label>
+    <label class="check"><input id="autoStopOnEnded" type="checkbox"> 视频播放结束（ended）时自动停止录制（注意：视频号自动连播时建议关闭此项）</label>
+  </section>
+</main>
+<script src="options.js"></script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "视频号录音转写 video2srt",
+  "version": "1.0.261106.1",
+  "description": "录制当前标签页正在播放的视频号音频，导出 MP3，并调用转写 API 生成 SRT 字幕，自动下载到本地。",
+  "permissions": ["tabCapture", "offscreen", "downloads", "storage", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "background.js" },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "视频号录音转写",
+    "default_icon": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" }
+  },
+  "options_ui": { "page": "options/options.html", "open_in_tab": true },
+  "content_scripts": [
+    { "matches": ["https://channels.weixin.qq.com/*"], "js": ["content/content.js"], "run_at": "document_idle" }
+  ],
+  "icons": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" }
+}

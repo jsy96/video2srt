@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="../ui.css">
+</head>
+<body class="popup">
+  <header>
+    <span class="logo">🎙</span>
+    <div>
+      <h1>视频号录音转写</h1>
+      <span id="ver" class="ver"></span>
+    </div>
+  </header>
+  <section id="status">
+    <div id="stateLine">○ 就绪</div>
+    <div id="detail" class="detail"></div>
+  </section>
+  <button id="mainBtn" class="primary">开始录制当前标签页</button>
+  <div class="row">
+    <a href="#" id="optLink">⚙ 转写 API 设置</a>
+    <a href="#" id="forceLink" hidden>强制结束</a>
+    <a href="#" id="clearLink" hidden>清除状态</a>
+  </div>
+  <p class="cfg" id="cfgLine"></p>
+  <p class="tip">先在标签页里播放视频，再点「开始录制」。录制与播放同步进行，中途别拖进度条；播完点「停止并生成文件」。</p>
+  <script src="popup.js"></script>
+</body>
+</html>
