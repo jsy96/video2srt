@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "视频录音转文字 video2srt",
-  "version": "1.0.261106.4",
-  "description": "录制当前标签页正在播放的视频音频，导出 MP3，并调用转写 API 生成 SRT 字幕，自动下载到本地。控制面板固定在浏览器侧边栏，始终可见；快捷键可自定义。",
-  "permissions": ["tabCapture", "offscreen", "downloads", "storage", "scripting", "sidePanel"],
+  "version": "1.0.261106.5",
+  "description": "录制当前标签页正在播放的视频音频，导出 MP3，并调用转写 API 生成 SRT 字幕，自动下载到本地。控制面板固定在浏览器侧边栏，始终可见；贴片广告自动跳过，快捷键可自定义。",
+  "permissions": ["tabCapture", "offscreen", "downloads", "storage", "scripting", "sidePanel", "contextMenus"],
   "host_permissions": ["<all_urls>"],
   "background": { "service_worker": "background.js" },
   "side_panel": { "default_path": "sidepanel/sidepanel.html" },

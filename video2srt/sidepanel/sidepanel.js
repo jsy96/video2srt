@@ -74,16 +74,18 @@ $('#startBtn').addEventListener('click', async function () {
   var btn = $('#startBtn');
   btn.disabled = true;
   var resp = await sendBg('start-capture');
+  // 等 render 完成后再写错误文案（render 是 async，不等它会被其内部的空详情覆盖）；
+  // 失败路径不写 storage，onChanged 不会再来覆盖
+  await render();
   if (resp && resp.ok === false) $('#detail').textContent = resp.error || '操作失败';
-  render();
 });
 
 $('#stopBtn').addEventListener('click', async function () {
   var btn = $('#stopBtn');
   btn.disabled = true;
   var resp = await sendBg('stop-capture');
+  await render();
   if (resp && resp.ok === false) $('#detail').textContent = resp.error || '操作失败';
-  render();
 });
 
 $('#optLink').addEventListener('click', function (e) {

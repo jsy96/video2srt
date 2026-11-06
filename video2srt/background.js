@@ -18,7 +18,8 @@ var DEFAULT_CFG = {
   bitrate: 48,
   chunkMinutes: 20,
   forceOneX: true,
-  autoStopOnEnded: false
+  autoStopOnEnded: false,
+  autoSkipAd: true
 };
 
 async function getCfg() {
@@ -154,7 +155,9 @@ async function onStartCapture() {
   if (st.state === 'recording') return { ok: false, error: '已在录制中' };
   if (st.state === 'processing' || st.state === 'downloading') return { ok: false, error: '正在处理上一次录制，请稍候或强制结束' };
 
-  var tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  // lastFocusedWindow：service worker 里 currentWindow 语义不可靠（无所属窗口），
+  // 用户刚点过面板/快捷键，聚焦窗口即目标窗口
+  var tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   var tab = tabs && tabs[0];
   if (!tab || tab.id == null) return { ok: false, error: '找不到当前标签页' };
   if (/^(chrome|edge|about|chrome-extension):/i.test(tab.url || '')) {
@@ -168,7 +171,10 @@ async function onStartCapture() {
     streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
   } catch (e) {
     if (/has not been invoked/i.test(String((e && e.message) || e))) {
-      return { ok: false, error: 'Chrome 尚未授权本页捕获，请重新点一次「开始」或按开始快捷键重试' };
+      return {
+        ok: false,
+        error: '本页还没授权捕获（Chrome 规定侧边栏按钮不算授权）：按一下开始快捷键，或在页面右键菜单点「🎙 开始录制本页音频」即可'
+      };
     }
     throw e;
   }
@@ -280,6 +286,34 @@ chrome.commands.onCommand.addListener(function (command) {
       if (command === 'start-record') await onStartCapture();
       else if (command === 'stop-record') await onStopCapture();
     } catch (e) { /* 快捷键路径无 UI 可展示错误，写入状态 */
+      try { await setState({ state: 'error', error: String((e && e.message) || e), stage: '', pending: [] }); } catch (_) {}
+    }
+  })();
+});
+
+// ---- 页面右键菜单：快捷键之外的授权入口 ----
+// tabCapture 的「扩展被调用过」授权按标签页发放，侧边栏/弹窗内按钮的点击不算；
+// 右键菜单点击与快捷键都构成授权，且不受侧边栏全局常驻的影响
+chrome.runtime.onInstalled.addListener(function () {
+  chrome.contextMenus.removeAll(function () {
+    chrome.contextMenus.create({ id: 'v2s-start', title: '🎙 开始录制本页音频', contexts: ['page', 'video'] });
+    chrome.contextMenus.create({ id: 'v2s-stop', title: '⏹ 停止录制并生成文件', contexts: ['page', 'video'] });
+  });
+});
+
+chrome.contextMenus.onClicked.addListener(function (info, tab) {
+  (async function () {
+    try {
+      if (info.menuItemId === 'v2s-start') {
+        var r = await onStartCapture();
+        // 顺手展开侧边栏面板显示状态（菜单点击带用户手势，允许 open）
+        if (tab && tab.windowId != null && r && r.ok) {
+          try { await chrome.sidePanel.open({ windowId: tab.windowId }); } catch (e) {}
+        }
+      } else if (info.menuItemId === 'v2s-stop') {
+        await onStopCapture();
+      }
+    } catch (e) {
       try { await setState({ state: 'error', error: String((e && e.message) || e), stage: '', pending: [] }); } catch (_) {}
     }
   })();
