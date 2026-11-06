@@ -61,6 +61,34 @@
   </section>
 
   <section>
+    <h2>实时转写引擎</h2>
+    <label>引擎
+      <select id="asrEngine">
+        <option value="chunked" selected>分段转写（默认，走上面的转写 API，无需本地服务）</option>
+        <option value="funasr">FunASR 本地流式（免费无限制、最快，需本机运行 FunASR 服务）</option>
+        <option value="tencent">腾讯云实时识别（每月免费 5 小时，国内直连）</option>
+      </select>
+    </label>
+    <label>FunASR 服务地址
+      <input id="funasrUrl" type="text" placeholder="ws://127.0.0.1:10096">
+      <span class="hint">本机部署：Docker 运行 FunASR runtime（modelscope/FunASR 的 funasr-runtime-sdk，流式模型 paraformer-zh-streaming）；音频不出本机。流式引擎工作时不占用上面的转写 API</span>
+    </label>
+    <label>腾讯云 AppId
+      <input id="txAppId" type="text" placeholder="实时语音识别的 AppId">
+    </label>
+    <label>腾讯云 SecretId
+      <input id="txSecretId" type="text">
+    </label>
+    <label>腾讯云 SecretKey（只存本机浏览器，不进代码）
+      <input id="txSecretKey" type="password">
+    </label>
+    <label>腾讯云引擎模型
+      <input id="txEngineModel" type="text" placeholder="16k_zh">
+      <span class="hint">16k_zh = 中文普通话；额度：实时语音识别每月免费 5 小时。流式引擎连不上或中途断开会自动退回分段转写，最终文件照常生成</span>
+    </label>
+  </section>
+
+  <section>
     <h2>快捷键</h2>
     <p class="hint">
       键盘快捷键默认：<code>Alt+Q</code> 打开/关闭侧边栏面板、<code>Alt+S</code> 开始录制、<code>Alt+E</code> 停止并生成文件。

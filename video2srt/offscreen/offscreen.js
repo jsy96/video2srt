@@ -27,6 +27,12 @@ var liveSegs = [];          // timed 模型累计段（录音时间轴，秒）
 var livePieces = [];        // 纯文本模型累计片（录音时间轴，秒）
 var liveInFlight = null;    // 进行中的切段转写 Promise（finalize 等它）
 
+// ---- 流式引擎（FunASR 本地 / 腾讯云实时）状态 ----
+var streamSess = null;         // 当前流式会话（streaming.js 统一接口）
+var streamFinishPromise = null; // 收尾 Promise（finalize 等它）
+var streamPartial = '';        // 进行中一句的部分文本（面板即时显示）
+var lastFinalMark = 0;         // 流式引擎上一句结束位置的样本游标
+
 chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
   if (!msg || msg.target !== 'offscreen') return;
   (async function () {
@@ -72,6 +78,7 @@ async function startCapture(msg) {
   pcmLiveChunks = []; pcmLiveLen = 0; liveCursor = 0;
   liveTimed = null; liveSegs = []; livePieces = [];
   liveBusy = false; liveInFlight = null; liveOn = false;
+  streamSess = null; streamFinishPromise = null; streamPartial = ''; lastFinalMark = 0;
 
   var m = { chromeMediaSource: 'tab', chromeMediaSourceId: msg.streamId };
   // 与 Chrome 官方 tab capture 示例一致：音视频一起申请（audio-only 在部分版本受限），视频轨拿到后立即停掉
@@ -107,11 +114,13 @@ async function startCapture(msg) {
       throw new Error('AudioContext 未能运行');
     }
 
-    // 实时转写抽头（已配置转写 API 才启用）：优先 AudioWorklet（无废弃告警），
-    // 老环境失败时退回 ScriptProcessor（控制台会有 deprecation 告警，功能不受影响）
-    if (curCfg && curCfg.apiKey && curCfg.baseUrl) {
+    // 实时转写抽头：分段引擎需要 HTTP 转写 API；流式引擎（FunASR/腾讯云）不依赖它。
+    // 优先 AudioWorklet（无废弃告警），老环境失败退回 ScriptProcessor
+    var wantStream = curCfg && (curCfg.asrEngine === 'funasr' || curCfg.asrEngine === 'tencent');
+    var wantChunkedLive = curCfg && curCfg.apiKey && curCfg.baseUrl;
+    if (wantStream || wantChunkedLive) {
       liveOn = await attachTap(src);
-      if (liveOn) liveTimer = setInterval(liveTick, 1000);
+      if (liveOn) startRealtime();
     }
   } catch (e) {
     try { if (audioCtx) await audioCtx.close(); } catch (_) {}
@@ -192,12 +201,16 @@ async function finalize() {
   // 暂存最近一次的 MP3 与文件名（失败不影响主流程，只是面板按钮暂时无货可存）
   try { await idbSet('mp3', mp3Blob); await idbSet('base', base); } catch (e) {}
 
-  if (curCfg && curCfg.apiKey && curCfg.baseUrl) {
+  // 转写：流式/分段 live 已覆盖 [0, liveCursor) → 直接汇总（必要时用 HTTP API 补尾巴）；
+  // 没有 live 覆盖但有 HTTP API → 停止后分段转写；两者皆无 → 仅导出 MP3
+  var engineLive = usedLive && (livePieces.length || liveSegs.length || liveCursor > 0);
+  if (engineLive || (curCfg && curCfg.apiKey && curCfg.baseUrl)) {
     try {
-      if (usedLive) {
-        // 实时路径：录制期间已分段转写了 [0, liveCursor)，等在途一段完成后补转尾巴再汇总
-        if (liveInFlight) await liveInFlight;
-        if (pcm16.length - liveCursor > 16000 * 2) {
+      if (liveInFlight) await liveInFlight;
+      if (streamFinishPromise) { await streamFinishPromise; streamFinishPromise = null; }
+      if (engineLive) {
+        // 尾巴只发生在流式中途断开退回分段、或分段在途不足 2s 的场合
+        if (curCfg && curCfg.apiKey && curCfg.baseUrl && pcm16.length - liveCursor > 16000 * 2) {
           postProgress('转写收尾段…', '');
           await transcribeRange(pcm16.subarray(liveCursor), liveCursor, pcm16.length);
         }
@@ -241,6 +254,64 @@ function liveStop() {
   liveOn = false;
   if (liveTimer) { clearInterval(liveTimer); liveTimer = 0; }
   if (tapNode) { try { tapNode.disconnect(); } catch (e) {} tapNode = null; }
+  if (streamSess) {
+    var s = streamSess;
+    streamSess = null;
+    streamFinishPromise = s.finish();   // 发结束信号并等服务端吐完最后一句
+  }
+}
+
+// 按设置里的引擎启动实时转写：流式引擎建 WebSocket 会话，参数不全自动退回分段
+function startRealtime() {
+  var eng = curCfg && curCfg.asrEngine;
+  if (eng === 'tencent' && !(curCfg.txAppId && curCfg.txSecretId && curCfg.txSecretKey)) {
+    postProgress('', '腾讯云实时引擎参数不全，退回分段转写');
+    eng = 'chunked';
+  }
+  if (eng !== 'funasr' && eng !== 'tencent') {
+    if (curCfg && curCfg.apiKey && curCfg.baseUrl) liveTimer = setInterval(liveTick, 1000);
+    return;
+  }
+  var common = { onPartial: onStreamPartial, onFinal: onStreamFinal, onClose: onStreamClose };
+  streamSess = (eng === 'funasr')
+    ? V2SStream.createFunasr(Object.assign({ url: curCfg.funasrUrl }, common))
+    : V2SStream.createTencent(Object.assign({
+        appId: curCfg.txAppId, secretId: curCfg.txSecretId,
+        secretKey: curCfg.txSecretKey, model: curCfg.txEngineModel
+      }, common));
+  postProgress('', (eng === 'funasr' ? 'FunASR 本地流式' : '腾讯云实时') + '转写已启动');
+}
+
+function onStreamPartial(text) {
+  streamPartial = String(text || '');
+  pushLivePartial();
+}
+
+function onStreamFinal(text, replaceLast) {
+  var t = String(text || '').trim();
+  if (!t) return;
+  if (replaceLast && livePieces.length) {
+    livePieces[livePieces.length - 1].text = t;   // FunASR 2pass 离线纠正上一句
+  } else {
+    livePieces.push({ text: t, start: lastFinalMark / 16000, end: pcmLiveLen / 16000 });
+  }
+  lastFinalMark = pcmLiveLen;
+  liveCursor = pcmLiveLen;    // 流式已覆盖到此处（分段引擎兜底尾巴时用）
+  streamPartial = '';
+  pushLivePartial();
+}
+
+function onStreamClose(err) {
+  streamSess = null;
+  streamPartial = '';
+  if (err && recorder && curCfg && curCfg.apiKey && curCfg.baseUrl && !liveTimer) {
+    // 录制中会话异常：保留已出结果，剩余音频退回分段转写续转
+    liveCursor = Math.max(liveCursor, lastFinalMark);
+    liveOn = true;
+    liveTimer = setInterval(liveTick, 1000);
+    postProgress('', '流式引擎断开（' + err + '），退回分段转写');
+  }
+  pushLivePartial();
 }
 
 // 给 16k 音频图并接 PCM 抽头，成功返回 true
@@ -248,6 +319,7 @@ async function attachTap(src) {
   function onPcm(f32) {
     var seg = V2S.floatToInt16(f32);
     if (seg.length) { pcmLiveChunks.push(seg); pcmLiveLen += seg.length; }
+    if (streamSess) streamSess.feed(seg);   // 流式引擎：音频同时喂给 WebSocket
   }
   try {
     await audioCtx.audioWorklet.addModule(chrome.runtime.getURL('pcm-tap-worklet.js'));
@@ -306,12 +378,16 @@ async function transcribeRange(pcmSlice, a, b) {
   return got;
 }
 
-// 已累计内容 → SRT（时间轴平移到视频内位置）
+// 已累计内容 → SRT（时间轴平移到视频内位置）；进行中的一句以部分文本形式一并显示
 function assembleLiveSrt() {
   var offset = Math.max(0, +((meta && meta.currentTime) || 0) || 0);
   var maxEnd = (meta && +meta.duration > 0) ? +meta.duration : 0;
   if (liveTimed) return liveSegs.length ? V2S.buildSrtTimed(liveSegs, offset, maxEnd) : '';
-  var ps = livePieces.map(function (p) { return { text: p.text, start: p.start + offset, end: p.end + offset }; });
+  var pieces = livePieces.slice();
+  if (streamPartial) {
+    pieces.push({ text: streamPartial, start: lastFinalMark / 16000, end: Math.max(pcmLiveLen, lastFinalMark + 1600) / 16000 });
+  }
+  var ps = pieces.map(function (p) { return { text: p.text, start: p.start + offset, end: p.end + offset }; });
   return V2S.buildSrtEstimatedPieces(ps);
 }
 

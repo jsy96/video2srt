@@ -4,6 +4,15 @@
 
 ## 更新记录
 
+- **2026-11-07　v1.0.261107-1　接入流式 ASR 引擎（FunASR 本地 / 腾讯云实时）**
+  - 设置页新增「实时转写引擎」三选一：**分段转写**（默认，走转写 API）/ **FunASR 本地流式**（免费无限制、最快；填服务地址，默认 `ws://127.0.0.1:10096`，本机 Docker 跑 funasr-runtime-sdk 即可）/ **腾讯云实时识别**（每月免费 5 小时，填 AppId/SecretId/SecretKey）
+  - 流式引擎工作原理：AudioWorklet 抽头的 16k PCM 实时喂 WebSocket，逐句拿结果**边录边上屏**（含进行中一句的部分文本），每句一个时间窗 → SRT 时间轴为逐句窗口，比分段估算更准；上屏延迟可达 1 秒内（取决于引擎响应）
+  - FunASR 协议：官方 runtime WebSocket（config JSON + PCM 二进制帧 + `is_speaking:false` 收尾，兼容 2pass 离线纠正上一句）；腾讯云协议：HMAC-SHA1 签名 URL + PCM 帧 + `{"type":"end"}` 收尾（slice_type=2 为一句结束）
+  - **健壮性**：流式引擎连不上/中途断开 → 自动退回分段转写续转（已出的句子保留）；流式引擎不占用 HTTP 转写 API（可只配引擎不配 API）；腾讯云参数不全保存时拦截提示
+  - 新增 `offscreen/streaming.js`（纯 WebSocket 客户端模块，不依赖 chrome.*）
+  - **真机验证**：FunASR 客户端对 Python mock 服务器全流程通过（partial→final→离线修正→正常关闭）；腾讯云签名与 Python 参考实现逐字节一致；腾讯云完整链路需老金填真实密钥后实测
+  - 待老金操作：FunASR 本机部署（Docker：`modelscope/funasr-runtime-sdk` 流式镜像）或腾讯云控制台开通实时识别拿密钥
+
 - **2026-11-06　v1.0.261106-12　实时转写切段缩短为 ~3 秒**
   - 实时段目标 25s → **3s**（静音搜索 ±1.5s、最短 2s、找不到静音 3s 硬切），检查节拍 2s → 1s：面板出字更勤（受 API 往返 ~1-2s 限制，体感约 **3-5 秒**蹦一段；要 <1s 逐字流式需换 websocket 流式 ASR 服务，OpenAI 兼容接口做不到）
   - 附带收益：纯文本模型（SenseVoice 等）的时间轴估算误差从「25s 窗内」收敛到「3s 窗内」，字幕更准；代价是 API 调用次数约为原来的 8 倍（总音频量不变，按秒计费的服务成本基本不变）
@@ -149,7 +158,7 @@ help/
 2. 点「加载已解压的扩展程序」，选择 `video2srt` 文件夹
 3. 工具栏固定该扩展图标
 
-### 配置转写 API（可选；不配则只导出 MP3）
+### 配置转写 API 与实时引擎（可选；都不配则只导出 MP3）
 
 1. 右键扩展图标 → 选项（或弹窗里点「转写 API 设置」）
 2. 填写 OpenAI 兼容的语音转写服务，默认按硅基流动（siliconflow.cn）预填：
@@ -157,6 +166,11 @@ help/
    - **API Key**：你的 key（只存本机浏览器 `chrome.storage.local`，不进代码、不会被提交）
    - **模型名**：以服务商模型列表为准，例如 `FunAudioLLM/SenseVoiceSmall`（便宜快）或 `openai/whisper-large-v3`
 3. 点「测试连接」确认通了，再「保存」
+
+**实时转写引擎（可选升级，边录边逐句上屏、延迟 1 秒内）**：设置页「实时转写引擎」三选一——
+- **FunASR 本地流式（推荐，免费无限制）**：本机 Docker 跑 FunASR runtime（流式模型 `paraformer-zh-streaming`），扩展里填 `ws://127.0.0.1:10096`；音频不出本机
+- **腾讯云实时识别**：控制台开通语音识别，填 AppId/SecretId/SecretKey；每月免费 5 小时
+- **分段转写（默认）**：走上面的转写 API，无需本地服务；流式引擎连不上时也自动退回此模式
 
 接口要求：兼容 OpenAI `POST /audio/transcriptions`。返回 `verbose_json`（带 segments 时间戳）→ 精确 SRT；只返回纯文本 → 自动按句切分并按时长估算时间轴。
 
@@ -185,7 +199,8 @@ help/
 offscreen:
   ├─ getUserMedia(tab 捕获流) → 16kHz 单声道音频图 → MediaRecorder(webm/opus)
   │    ├─ 捕获流同时经 Audio 元件回放（tabCapture 会静音标签页，不回放就听不到声音）
-  │    └─ 音频图并接 PCM 抽头：录制中每 ~3s 在静音处切段即时转写 → 面板边录边出字
+  │    └─ 音频图并接 PCM 抽头：流式引擎（FunASR/腾讯云）实时喂 WebSocket 逐句上屏；
+  │       分段引擎则每 ~3s 在静音处切段即时转写 → 面板边录边出字（引擎可切换，断开自动互备）
   ├─ 停止后：等在途段 → 补转尾巴（>2s）→ 汇总 SRT；MP3 用抽头 PCM 直接 lamejs 编码
   │    （音频图不可用时回退：解码 webm 重采样，再按原「探测段+细分」策略分段转写，仍逐段推结果）
   ├─ 生成 SRT（时间戳平移到视频内位置，BOM 头）

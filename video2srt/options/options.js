@@ -11,7 +11,13 @@ var DEFAULT_CFG = {
   forceOneX: true,
   autoStopOnEnded: false,
   autoSkipAd: true,
-  autoSaveDialog: false
+  autoSaveDialog: false,
+  asrEngine: 'chunked',
+  funasrUrl: 'ws://127.0.0.1:10096',
+  txAppId: '',
+  txSecretId: '',
+  txSecretKey: '',
+  txEngineModel: '16k_zh'
 };
 
 function $(s) { return document.querySelector(s); }
@@ -29,6 +35,12 @@ async function load() {
   $('#autoStopOnEnded').checked = !!cfg.autoStopOnEnded;
   $('#autoSkipAd').checked = cfg.autoSkipAd !== false;
   $('#autoSaveDialog').checked = !!cfg.autoSaveDialog;
+  $('#asrEngine').value = ['chunked', 'funasr', 'tencent'].indexOf(cfg.asrEngine) >= 0 ? cfg.asrEngine : 'chunked';
+  $('#funasrUrl').value = cfg.funasrUrl || 'ws://127.0.0.1:10096';
+  $('#txAppId').value = cfg.txAppId || '';
+  $('#txSecretId').value = cfg.txSecretId || '';
+  $('#txSecretKey').value = cfg.txSecretKey || '';
+  $('#txEngineModel').value = cfg.txEngineModel || '16k_zh';
 }
 
 function collect() {
@@ -42,12 +54,24 @@ function collect() {
     forceOneX: $('#forceOneX').checked,
     autoStopOnEnded: $('#autoStopOnEnded').checked,
     autoSkipAd: $('#autoSkipAd').checked,
-    autoSaveDialog: $('#autoSaveDialog').checked
+    autoSaveDialog: $('#autoSaveDialog').checked,
+    asrEngine: ['chunked', 'funasr', 'tencent'].indexOf($('#asrEngine').value) >= 0 ? $('#asrEngine').value : 'chunked',
+    funasrUrl: $('#funasrUrl').value.trim() || 'ws://127.0.0.1:10096',
+    txAppId: $('#txAppId').value.trim(),
+    txSecretId: $('#txSecretId').value.trim(),
+    txSecretKey: $('#txSecretKey').value.trim(),
+    txEngineModel: $('#txEngineModel').value.trim() || '16k_zh'
   };
 }
 
 $('#saveBtn').addEventListener('click', async function () {
-  await chrome.storage.local.set({ v2s_cfg: collect() });
+  var cfgNow = collect();
+  if (cfgNow.asrEngine === 'tencent' && !(cfgNow.txAppId && cfgNow.txSecretId && cfgNow.txSecretKey)) {
+    $('#status').textContent = '选了腾讯云实时引擎：AppId / SecretId / SecretKey 都要填';
+    $('#status').style.color = '#d0455b';
+    return;
+  }
+  await chrome.storage.local.set({ v2s_cfg: cfgNow });
   $('#status').textContent = '✓ 已保存';
   $('#status').style.color = '#1f9d61';
 });

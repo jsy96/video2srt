@@ -21,7 +21,13 @@ var DEFAULT_CFG = {
   forceOneX: true,
   autoStopOnEnded: false,
   autoSkipAd: true,
-  autoSaveDialog: false
+  autoSaveDialog: false,
+  asrEngine: 'chunked',
+  funasrUrl: 'ws://127.0.0.1:10096',
+  txAppId: '',
+  txSecretId: '',
+  txSecretKey: '',
+  txEngineModel: '16k_zh'
 };
 
 async function getCfg() {
