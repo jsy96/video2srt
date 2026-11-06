@@ -111,7 +111,7 @@ async function startCapture(msg) {
     // 老环境失败时退回 ScriptProcessor（控制台会有 deprecation 告警，功能不受影响）
     if (curCfg && curCfg.apiKey && curCfg.baseUrl) {
       liveOn = await attachTap(src);
-      if (liveOn) liveTimer = setInterval(liveTick, 2000);
+      if (liveOn) liveTimer = setInterval(liveTick, 1000);
     }
   } catch (e) {
     try { if (audioCtx) await audioCtx.close(); } catch (_) {}
@@ -322,21 +322,23 @@ function pushLivePartial() {
   }
 }
 
-// 每 2s 检查：攒够约 PROBE_SEC 秒就在静音处切段立刻转写（同时最多一段在途，失败跳过该段）
+// 每 1s 检查：攒够约 LIVE_SEC（3s）就在静音处切段立刻转写
+// （同时最多一段在途，失败跳过该段继续）
 function liveTick() {
   if (!liveOn || liveBusy || !recorder) return;
   var sr = 16000;
-  if (pcmLiveLen - liveCursor < PROBE_SEC * sr) return;
+  if (pcmLiveLen - liveCursor < LIVE_SEC * sr) return;
   var winA = liveCursor;
-  var win = sliceLive(winA, Math.min(pcmLiveLen, winA + (PROBE_SEC + 8) * sr));
+  var win = sliceLive(winA, Math.min(pcmLiveLen, winA + (LIVE_SEC + 1.5) * sr));
   var cut = 0;
   try {
-    var cuts = V2S.findCutPoints(win, sr, PROBE_SEC, 8);
+    var cuts = V2S.findCutPoints(win, sr, LIVE_SEC, 1.5);
     if (cuts.length) cut = winA + cuts[0];
   } catch (e) {}
-  if (!(cut > winA)) cut = Math.min(pcmLiveLen - sr * 2, liveCursor + PROBE_SEC * sr);   // 找不到静音就按 25s 硬切
-  if (!(cut > winA)) return;
-  var a = liveCursor, b = Math.max(cut, a + sr * 5);
+  // 静音点太早（<2s）或找不到 → 按目标长度硬切，至少留 1s 给下一段
+  if (!(cut > winA + 2 * sr)) cut = Math.min(pcmLiveLen - sr, liveCursor + LIVE_SEC * sr);
+  if (!(cut > winA + sr)) return;
+  var a = liveCursor, b = cut;
   liveCursor = b;
   liveBusy = true;
   liveInFlight = transcribeRange(sliceLive(a, b), a, b).then(function (got) {
@@ -353,6 +355,11 @@ function liveTick() {
 // 3) 模型只回纯文本（如 SenseVoice）→ 剩余按 PROBE_SEC 细分段，每段文字只在自己的
 //    时间窗内按句均分，把估算误差限制在单段（~25s）内，而非整条录音。
 var PROBE_SEC = 25;
+
+// 实时转写（录制中）的切段目标：约 3s 一段（静音搜索 ±1.5s、最短 2s），
+// 段更短 → 面板出字更勤 + 纯文本模型的时间轴估算误差收敛到 3s 窗内；
+// API 往返本身 ~1-2s，体感约 3-5s 蹦一段
+var LIVE_SEC = 3;
 
 async function produceSrt(pcm16, durSec, progress) {
   var sr = 16000;
