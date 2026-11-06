@@ -174,8 +174,19 @@ async function finalize() {
     note = '未配置转写 API，本次仅导出 MP3（可在扩展设置里配置）';
   }
 
-  // srtText 原文（无 BOM）随消息带给后台，供侧边栏面板显示与复制
-  await downloadFiles(files, note, srtText);
+  // srtText 原文（无 BOM）随消息带给后台，供侧边栏面板显示与复制。
+  // 保存模式：勾选「结束后自动弹框保存」→ 弹保存框存两个文件；
+  //           未勾选 → 不自动保存，产物留在暂存（IDB）与面板，点「保存 MP3/SRT」手动存
+  if (curCfg && curCfg.autoSaveDialog) {
+    await downloadFiles(files, note, srtText);
+  } else {
+    var doneNote = (note ? note + '；' : '') + '未自动保存：点面板「保存 MP3/SRT」按钮保存文件';
+    postProgress('完成', doneNote);
+    chrome.runtime.sendMessage(
+      { target: 'background', type: 'offscreen-done-direct', note: doneNote, srt: srtText || '' },
+      function () { void chrome.runtime.lastError; }
+    );
+  }
 }
 
 // 分段转写并合并为一条 SRT —— 精确时间轴策略：
@@ -315,17 +326,16 @@ function encodeMp3(pcm16, sampleRate, kbps, onProgress) {
 }
 
 async function downloadFiles(files, note, srtText) {
-  postProgress('保存文件…', note || '');
-  // 首选：在本文档内直接调 downloads API（blob URL 与本文档同源，一定可用）；
-  // 用户在设置里勾选「弹框保存」时对应文件弹 Save As 框
-  var wantDialog = function (fn) { return /\.srt$/i.test(fn) ? !!(curCfg && curCfg.saveAsSrt) : !!(curCfg && curCfg.saveAsMp3); };
+  postProgress('弹保存框…', note || '');
+  // 自动模式（勾选「结束后自动弹框保存」）：每个文件弹 Save As 框由用户选位置
+  // 首选：在本文档内直接调 downloads API（blob URL 与本文档同源，一定可用）
   var ids = [];
   var directOk = !!(chrome.downloads && chrome.downloads.download);
   if (directOk) {
     try {
       for (var i = 0; i < files.length; i++) {
         ids.push(await chrome.downloads.download({
-          url: files[i].url, filename: files[i].filename, saveAs: wantDialog(files[i].filename), conflictAction: 'uniquify'
+          url: files[i].url, filename: files[i].filename, saveAs: true
         }));
       }
     } catch (e) {

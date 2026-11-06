@@ -21,8 +21,7 @@ var DEFAULT_CFG = {
   forceOneX: true,
   autoStopOnEnded: false,
   autoSkipAd: true,
-  saveAsMp3: false,
-  saveAsSrt: false
+  autoSaveDialog: false
 };
 
 async function getCfg() {
@@ -204,15 +203,13 @@ async function onStopCapture() {
 
 async function onFiles(msg) {
   if (msg.srt) await chrome.storage.local.set(objOf(LAST_SRT_KEY, msg.srt));
-  var cfg = await getCfg();
   var ids = [];
   var files = msg.files || [];
+  // 兜底路径只在自动模式（弹框保存）下被触发，统一弹 Save As 框
   for (var i = 0; i < files.length; i++) {
     try {
-      // 用户勾选「弹框保存」时对应文件弹 Save As 框（与 offscreen 直下路径同规则）
-      var dialog = /\.srt$/i.test(files[i].filename) ? !!cfg.saveAsSrt : !!cfg.saveAsMp3;
       ids.push(await chrome.downloads.download({
-        url: files[i].url, filename: files[i].filename, saveAs: dialog, conflictAction: 'uniquify'
+        url: files[i].url, filename: files[i].filename, saveAs: true
       }));
     } catch (e) { /* 单个失败继续下一个 */ }
   }
