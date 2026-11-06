@@ -4,6 +4,12 @@
 
 ## 更新记录
 
+- **2026-11-06　工具链配置（不涉及扩展代码）**
+  - 按 Chrome 官方《Build extensions with AI coding agents》指南配置：`chrome-devtools` MCP server（`.mcp.json`，带 `--categoryExtensions --autoConnect`，可在真实 Chrome 里安装/重载/调试扩展）
+  - 安装 Modern Web Guidance 技能包（`.agents/skills/`：`chrome-extensions` + `modern-web-guidance`，Claude Code 经 `.claude/skills` 链接加载；更新用 `npx modern-web-guidance@latest update`）
+  - 新增项目级 `CLAUDE.md`（含 CHROMEWEBSTORE.md 维护指令）
+  - 安全处理：老金本机打包产生的 `video2srt.crx`/`video2srt.pem`（打包私钥）曾被误 `git add -A` 加入提交，已在推送前拦截、从提交中移除并 gitignore；**该私钥从未上传到 GitHub**（已核实远程历史）
+  - 本仓库 git 对 github.com 固定走本地代理 `127.0.0.1:7890`（直连 443 经常不通）
 - **2026-11-06　v1.0.261106-1　video2srt 初始实现**
   - Chrome 扩展（Manifest V3）：一键录制当前标签页正在播放的视频号音频
   - 导出 MP3（16 kHz 单声道，lamejs 编码，可选 32/48/64 kbps）
