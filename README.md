@@ -4,6 +4,11 @@
 
 ## 更新记录
 
+- **2026-11-06　上架准备（不涉及扩展代码，版本号不变 v1.0.261106-5）**
+  - 隐私政策草稿：`docs/privacy.md`（GitHub Pages 托管用；含 [待填] 邮箱占位，启用 Pages 后 URL 填入 CHROMEWEBSTORE.md 与开发者后台）
+  - 打包脚本：`video2srt/tools/package.sh`（显式白名单打包 + PowerShell Compress-Archive，排除 CHROMEWEBSTORE.md/tests/tools）；已产出 `video2srt-v1.0.261106.5.zip`（80 KB / 15 文件，分隔符与完整性已用 Python zipfile 验证）；`*.zip` 入 .gitignore
+  - 待老金完成：开发者账号注册（$5）、GitHub Pages 开启、1280×800 截图、开发者后台填表（内容从 CHROMEWEBSTORE.md 抄）
+
 - **2026-11-06　v1.0.261106-5　真机定位修复「点开始没反应」+ 新增右键菜单授权入口 + 自动跳过广告**
   - **根因（真机抓到）**：tabCapture 的「扩展被调用过」授权**按标签页**发放，侧边栏面板按钮的点击**不构成授权**（实测错误原文 `Extension has not been invoked for the current page`）；而旧代码把后台返回的错误信息在 `render()` 里覆盖成空 → 用户看到的就是「没反应」，状态一直 idle → 「结束」永远灰着
   - 修复 1：面板点击处理改为 `await render()` 之后再写错误文案（第一版修复没等 async `render` 完成仍会被覆盖——真机复测抓到这个竞态并改正）

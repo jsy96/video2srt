@@ -104,12 +104,24 @@ Chinese (Simplified)
 
 **Privacy Policy URL** [REQUIRED]
 
-[待定] 提交商店前需公开托管（GitHub Pages 即可），内容要点：不收集个人数据、音频仅发往用户配置的转写服务、API Key 仅存本机。
+草稿已就绪：仓库 `docs/privacy.md`（内容与下方数据披露一致：不收集个人数据、配置与录音仅存本机、音频仅发往用户自行配置的转写 API、API Key 不出本机）。
+
+**待老金操作**：仓库 Settings → Pages → Deploy from a branch → 选 `main` + `/docs` 目录，启用后 URL 为 `https://jsy96.github.io/video2srt/privacy`，把它填进这里和开发者后台。提交前把 `docs/privacy.md` 末尾的联系邮箱占位符换成真实邮箱。
 
 ## Distribution
 
 **Visibility**: [待定] Public（建议）
 **Regions**: All regions
+
+## 打包
+
+提交用 zip 由 `tools/package.sh` 生成（显式白名单打包，自动排除 CHROMEWEBSTORE.md/tests/tools；PowerShell Compress-Archive，无需 zip CLI）：
+
+```bash
+cd video2srt && bash tools/package.sh   # 产出 ../video2srt-v<版本>.zip
+```
+
+当前已产出 `video2srt-v1.0.261106.5.zip`（80 KB / 15 个文件，条目分隔符与完整性已验证）。zip 为构建产物不入库（.gitignore 已排除 *.zip）。
 
 ## Developer Info
 
