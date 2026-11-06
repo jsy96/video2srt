@@ -128,7 +128,7 @@ async function finalize() {
   var mp3Blob = encodeMp3(pcm16, 16000, kbps);
 
   var base = V2S.buildBaseName(meta && meta.title);
-  var files = [{ url: URL.createObjectURL(mp3Blob), filename: '视频号转写/' + base + '.mp3' }];
+  var files = [{ url: URL.createObjectURL(mp3Blob), filename: '视频转写/' + base + '.mp3' }];
   var note = '';
 
   if (curCfg && curCfg.apiKey && curCfg.baseUrl) {
@@ -142,7 +142,7 @@ async function finalize() {
       // 前置 UTF-8 BOM，Windows 播放器/记事本打开中文 SRT 不乱码
       // MIME 必须用 application/x-subrip：text/plain 会被 Chrome 下载子系统把 .srt 擅自改成 .txt（实测）
       var srtBlob = new Blob(['﻿' + srtText], { type: 'application/x-subrip' });
-      files.push({ url: URL.createObjectURL(srtBlob), filename: '视频号转写/' + base + '.srt' });
+      files.push({ url: URL.createObjectURL(srtBlob), filename: '视频转写/' + base + '.srt' });
     }
   } else {
     note = '未配置转写 API，本次仅导出 MP3（可在扩展设置里配置）';
@@ -151,38 +151,74 @@ async function finalize() {
   await downloadFiles(files, note);
 }
 
-// 分段转写长音频并合并为一条 SRT
+// 分段转写并合并为一条 SRT —— 精确时间轴策略：
+// 1) 先转一段 PROBE_SEC（约 25s，切在静音处）探测模型能力；
+// 2) 模型返回分段（verbose_json，如 whisper 系）→ 剩余按用户配置的大段转写，逐句精确时间戳；
+// 3) 模型只回纯文本（如 SenseVoice）→ 剩余按 PROBE_SEC 细分段，每段文字只在自己的
+//    时间窗内按句均分，把估算误差限制在单段（~25s）内，而非整条录音。
+var PROBE_SEC = 25;
+
 async function produceSrt(pcm16, durSec, progress) {
+  var sr = 16000;
   var offset = Math.max(0, +((meta && meta.currentTime) || 0) || 0);
   var maxEnd = (meta && +meta.duration > 0) ? +meta.duration : 0;
-  var chunkSec = Math.max(60, ((+curCfg.chunkMinutes) || 20) * 60);
+  var bigChunkSec = Math.max(60, ((+curCfg.chunkMinutes) || 20) * 60);
   var kbps = Number(curCfg.bitrate) || 48;
 
-  var pieces = splitPieces(pcm16, 16000, chunkSec);
-  var allSegs = [];
-  var anyTimed = false;
-  var fullText = '';
-  for (var i = 0; i < pieces.length; i++) {
-    progress('转写中（第 ' + (i + 1) + '/' + pieces.length + ' 段）…', '已录 ' + Math.round(durSec) + ' 秒');
-    var pieceMp3 = encodeMp3(pcm16.subarray(pieces[i].a, pieces[i].b), 16000, kbps);
-    var r = await transcribeBlob(pieceMp3);
-    if (r.timed) anyTimed = true;
-    for (var j = 0; j < r.segments.length; j++) {
-      var sg = r.segments[j];
-      allSegs.push({ start: sg.start + pieces[i].t0, end: sg.end + pieces[i].t0, text: sg.text });
-    }
-    fullText += r.text || r.segments.map(function (s) { return s.text; }).join('');
+  // 短音频（不足两段）直接整段转
+  if (durSec <= PROBE_SEC * 1.6) {
+    progress('转写中…', '已录 ' + Math.round(durSec) + ' 秒');
+    var r0 = await transcribeBlob(encodeMp3(pcm16, sr, kbps));
+    if (r0.timed && r0.segments.length) return V2S.buildSrtTimed(r0.segments, offset, maxEnd);
+    if (!String(r0.text || '').trim()) throw new Error('转写结果为空');
+    return V2S.buildSrtEstimated(r0.text, offset, offset + durSec);
   }
-  if (anyTimed && allSegs.length) return V2S.buildSrtTimed(allSegs, offset, maxEnd);
-  if (!fullText.trim()) throw new Error('转写结果为空');
-  return V2S.buildSrtEstimated(fullText, offset, offset + durSec);
+
+  // 探测段：[0, probeEnd)
+  var cutsFine = V2S.findCutPoints(pcm16, sr, PROBE_SEC, 8);
+  var probeEnd = cutsFine.length ? cutsFine[0] : Math.floor(durSec * 0.5 * sr);
+  progress('转写中（探测段精度…）', '');
+  var probe = await transcribeBlob(encodeMp3(pcm16.subarray(0, probeEnd), sr, kbps));
+
+  if (probe.timed) {
+    // 模型支持分段 → 大段转写、精确时间戳
+    var segs = probe.segments.map(function (s) { return { start: s.start, end: s.end, text: s.text }; });
+    var rest = splitPieces(pcm16, sr, bigChunkSec, probeEnd);
+    for (var i = 0; i < rest.length; i++) {
+      progress('转写中（第 ' + (i + 1) + '/' + rest.length + ' 段，精确时间戳）…', '');
+      var rb = await transcribeBlob(encodeMp3(pcm16.subarray(rest[i].a, rest[i].b), sr, kbps));
+      for (var j = 0; j < rb.segments.length; j++) {
+        segs.push({ start: rb.segments[j].start + rest[i].t0, end: rb.segments[j].end + rest[i].t0, text: rb.segments[j].text });
+      }
+    }
+    if (segs.length) return V2S.buildSrtTimed(segs, offset, maxEnd);
+    throw new Error('转写结果为空');
+  }
+
+  // 纯文本模型 → 25s 细分段，误差限制在段内
+  var textPieces = [{ text: String(probe.text || ''), start: offset, end: offset + probeEnd / sr }];
+  var fineRest = splitPieces(pcm16, sr, PROBE_SEC, probeEnd);
+  for (var k = 0; k < fineRest.length; k++) {
+    progress('转写中（第 ' + (k + 1) + '/' + fineRest.length + ' 段，细分估算时间轴）…', '');
+    var rf = await transcribeBlob(encodeMp3(pcm16.subarray(fineRest[k].a, fineRest[k].b), sr, kbps));
+    textPieces.push({
+      text: String(rf.text || ''),
+      start: offset + fineRest[k].t0,
+      end: offset + fineRest[k].b / sr
+    });
+  }
+  var srt = V2S.buildSrtEstimatedPieces(textPieces);
+  if (!srt) throw new Error('转写结果为空');
+  return srt;
 }
 
-function splitPieces(pcm16, sr, chunkSec) {
+// 把 pcm 按 chunkSec 在静音处切段；fromSample 之后才开始产生切点（探测段之后）
+function splitPieces(pcm16, sr, chunkSec, fromSample) {
   var cuts = V2S.findCutPoints(pcm16, sr, chunkSec, Math.min(30, chunkSec / 4));
   var pieces = [];
-  var prev = 0;
+  var prev = Math.max(0, fromSample || 0);
   for (var i = 0; i < cuts.length; i++) {
+    if (cuts[i] <= prev) continue;
     pieces.push({ a: prev, b: cuts[i], t0: prev / sr });
     prev = cuts[i];
   }

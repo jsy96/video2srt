@@ -115,21 +115,32 @@
 
   // 无时间戳的全文 → SRT（按句切分、按时长按字数比例估算时间轴，仅兜底用）
   function buildSrtEstimated(text, startSec, endSec, maxLen) {
-    var sents = splitSentences(text, maxLen);
-    if (!sents.length) return '';
-    var total = Math.max(0.5, endSec - startSec);
-    var totalChars = 0;
-    for (var i = 0; i < sents.length; i++) totalChars += sents[i].length;
-    if (!totalChars) totalChars = 1;
-    var t = startSec, blocks = [];
-    for (var k = 0; k < sents.length; k++) {
-      if (t >= endSec) break;
-      var d = Math.max(0.4, total * (sents[k].length / totalChars));
-      var a = t, b = t + d;
-      if (k === sents.length - 1) b = Math.max(b, endSec);
-      if (b > endSec) b = endSec;
-      blocks.push((blocks.length + 1) + '\n' + secToSrtTime(a) + ' --> ' + secToSrtTime(b) + '\n' + sents[k]);
-      t = b;
+    return buildSrtEstimatedPieces([{ text: text, start: startSec, end: endSec }], maxLen);
+  }
+
+  // 无时间戳模型的多段合并 → SRT：每段文字只在自己的 [start,end] 窗口内按句均分，
+  // 把估算误差限制在单段长度内（配合 ~25s 细分段使用，见 offscreen produceSrt）
+  function buildSrtEstimatedPieces(pieces, maxLen) {
+    var blocks = [], n = 0;
+    for (var i = 0; i < (pieces ? pieces.length : 0); i++) {
+      var p = pieces[i];
+      var sents = splitSentences(p.text, maxLen);
+      if (!sents.length) continue;
+      var total = Math.max(0.5, p.end - p.start);
+      var totalChars = 0;
+      for (var k = 0; k < sents.length; k++) totalChars += sents[k].length;
+      if (!totalChars) totalChars = 1;
+      var t = p.start;
+      for (var j = 0; j < sents.length; j++) {
+        if (t >= p.end) break;
+        var d = Math.max(0.4, total * (sents[j].length / totalChars));
+        var a = t, b = t + d;
+        if (j === sents.length - 1) b = Math.max(b, p.end);
+        if (b > p.end) b = p.end;
+        n++;
+        blocks.push(n + '\n' + secToSrtTime(a) + ' --> ' + secToSrtTime(b) + '\n' + sents[j]);
+        t = b;
+      }
     }
     return blocks.length ? blocks.join('\n\n') + '\n' : '';
   }
@@ -160,6 +171,7 @@
     splitSentences: splitSentences,
     buildSrtTimed: buildSrtTimed,
     buildSrtEstimated: buildSrtEstimated,
+    buildSrtEstimatedPieces: buildSrtEstimatedPieces,
     sanitizeFilename: sanitizeFilename,
     buildBaseName: buildBaseName
   };

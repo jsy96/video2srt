@@ -6,7 +6,7 @@ var lastState = { state: 'idle' };
 function $(s) { return document.querySelector(s); }
 
 function displayVersion() {
-  // 版本号唯一来源是 manifest.json：1.0.261106.1 → 显示 v1.0.261106-1
+  // 版本号唯一来源是 manifest.json：1.0.261106.3 → 显示 v1.0.261106-3
   var v = chrome.runtime.getManifest().version.split('.');
   $('#ver').textContent = 'v' + v.slice(0, 3).join('.') + '-' + (v[3] || '1');
 }
@@ -37,34 +37,24 @@ async function render() {
     ? ('转写：' + (cfg.model || '?') + ' @ ' + host)
     : '未配置转写 API（将只导出 MP3）';
 
-  var btn = $('#mainBtn');
-  $('#forceLink').hidden = !(state === 'processing' || state === 'downloading');
+  var busy = (state === 'processing' || state === 'downloading');
+  $('#startBtn').disabled = busy || state === 'recording';
+  $('#stopBtn').disabled = state !== 'recording';
+  $('#forceLink').hidden = !busy;
   $('#clearLink').hidden = !(state === 'done' || state === 'error');
 
   if (state === 'recording') {
     $('#stateLine').textContent = '● 录制中 ' + fmtDur(Date.now() - (st.startedAt || Date.now()));
-    btn.textContent = '停止并生成文件';
-    btn.disabled = false;
   } else if (state === 'processing') {
     $('#stateLine').textContent = '⏳ ' + (st.stage || '处理中…');
-    btn.textContent = '处理中，请稍候…';
-    btn.disabled = true;
   } else if (state === 'downloading') {
     $('#stateLine').textContent = '⬇ 保存文件中…';
-    btn.textContent = '保存中…';
-    btn.disabled = true;
   } else if (state === 'done') {
     $('#stateLine').textContent = '✓ 完成，文件已下载';
-    btn.textContent = '已完成';
-    btn.disabled = true;
   } else if (state === 'error') {
     $('#stateLine').textContent = '✗ 出错';
-    btn.textContent = '出错';
-    btn.disabled = true;
   } else {
     $('#stateLine').textContent = '○ 就绪';
-    btn.textContent = '开始录制当前标签页';
-    btn.disabled = false;
   }
   $('#detail').textContent = [st.detail, st.error].filter(Boolean).join(' ｜ ');
 }
@@ -78,12 +68,18 @@ function sendBg(type) {
   });
 }
 
-$('#mainBtn').addEventListener('click', async function () {
-  var st = await getState();
-  var btn = $('#mainBtn');
+$('#startBtn').addEventListener('click', async function () {
+  var btn = $('#startBtn');
   btn.disabled = true;
-  btn.textContent = '…';
-  var resp = await sendBg(st.state === 'recording' ? 'stop-capture' : 'start-capture');
+  var resp = await sendBg('start-capture');
+  if (resp && resp.ok === false) $('#detail').textContent = resp.error || '操作失败';
+  render();
+});
+
+$('#stopBtn').addEventListener('click', async function () {
+  var btn = $('#stopBtn');
+  btn.disabled = true;
+  var resp = await sendBg('stop-capture');
   if (resp && resp.ok === false) $('#detail').textContent = resp.error || '操作失败';
   render();
 });
@@ -91,6 +87,11 @@ $('#mainBtn').addEventListener('click', async function () {
 $('#optLink').addEventListener('click', function (e) {
   e.preventDefault();
   chrome.runtime.openOptionsPage();
+});
+
+$('#keyLink').addEventListener('click', function (e) {
+  e.preventDefault();
+  sendBg('open-shortcuts');
 });
 
 $('#clearLink').addEventListener('click', function (e) {

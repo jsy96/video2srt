@@ -9,7 +9,8 @@ var DEFAULT_CFG = {
   bitrate: 48,
   chunkMinutes: 20,
   forceOneX: true,
-  autoStopOnEnded: false
+  autoStopOnEnded: false,
+  showPanel: true
 };
 
 function $(s) { return document.querySelector(s); }
@@ -23,8 +24,9 @@ async function load() {
   $('#language').value = cfg.language || '';
   $('#bitrate').value = String(cfg.bitrate || 48);
   $('#chunkMinutes').value = String(cfg.chunkMinutes || 20);
-  $('#forceOneX').checked = !!cfg.forceOneX;
+  $('#forceOneX').checked = cfg.forceOneX !== false;
   $('#autoStopOnEnded').checked = !!cfg.autoStopOnEnded;
+  $('#showPanel').checked = cfg.showPanel !== false;
 }
 
 function collect() {
@@ -36,7 +38,8 @@ function collect() {
     bitrate: Number($('#bitrate').value) || 48,
     chunkMinutes: Math.min(60, Math.max(5, Number($('#chunkMinutes').value) || 20)),
     forceOneX: $('#forceOneX').checked,
-    autoStopOnEnded: $('#autoStopOnEnded').checked
+    autoStopOnEnded: $('#autoStopOnEnded').checked,
+    showPanel: $('#showPanel').checked
   };
 }
 
@@ -44,6 +47,12 @@ $('#saveBtn').addEventListener('click', async function () {
   await chrome.storage.local.set({ v2s_cfg: collect() });
   $('#status').textContent = '✓ 已保存';
   $('#status').style.color = '#1f9d61';
+});
+
+$('#keysBtn').addEventListener('click', function () {
+  chrome.runtime.sendMessage({ target: 'background', type: 'open-shortcuts' }, function () {
+    void chrome.runtime.lastError;
+  });
 });
 
 $('#testBtn').addEventListener('click', async function () {

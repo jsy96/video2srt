@@ -7,7 +7,7 @@
 </head>
 <body>
 <main>
-  <h1>视频号录音转写 · 设置</h1>
+  <h1>视频录音转文字 · 设置</h1>
 
   <section>
     <h2>转写 API（OpenAI 兼容 /audio/transcriptions 接口）</h2>
@@ -29,8 +29,9 @@
       <input id="language" type="text" placeholder="zh">
     </label>
     <p class="hint">
-      接口需兼容 OpenAI 的 <code>POST /audio/transcriptions</code>：返回 verbose_json（带分段时间戳）时生成精确 SRT；
-      只返回纯文本时按句切分并按时长估算时间轴。国内可用硅基流动（siliconflow.cn），也可自建兼容网关。
+      接口需兼容 OpenAI 的 <code>POST /audio/transcriptions</code>。<b>时间轴精度</b>：模型返回分段时间戳
+      （verbose_json，如 whisper 系）时逐句精确；只回纯文本的模型（如 SenseVoiceSmall）会自动按
+      ~25 秒在静音处细分转写，时间轴误差收敛到单段内。国内可用硅基流动（siliconflow.cn），也可自建兼容网关。
     </p>
     <div class="row">
       <button id="saveBtn" class="primary" style="width:auto">保存</button>
@@ -51,10 +52,22 @@
     </label>
     <label>单次转写分段（分钟）
       <input id="chunkMinutes" type="number" min="5" max="60" value="20">
-      <span class="hint">超过该时长的录音会自动在静音处切分段转写、再合并成一条 SRT（规避 API 单文件大小限制）</span>
+      <span class="hint">仅对返回分段时间戳的模型生效（纯文本模型固定按 ~25 秒细分以保证时间轴精度）</span>
     </label>
     <label class="check"><input id="forceOneX" type="checkbox" checked> 录制开始时把视频强制为 1x 倍速（保证 SRT 时间轴与原视频对齐）</label>
-    <label class="check"><input id="autoStopOnEnded" type="checkbox"> 视频播放结束（ended）时自动停止录制（注意：视频号自动连播时建议关闭此项）</label>
+    <label class="check"><input id="autoStopOnEnded" type="checkbox"> 视频播放结束（ended）时自动停止录制（注意：自动连播的站点建议关闭此项）</label>
+  </section>
+
+  <section>
+    <h2>悬浮面板与快捷键</h2>
+    <label class="check"><input id="showPanel" type="checkbox" checked> 在网页上显示悬浮控制面板（开始/结束按钮，可拖动、可折叠）</label>
+    <p class="hint">
+      键盘快捷键默认：<code>Alt+Shift+S</code> 开始录制、<code>Alt+Shift+X</code> 停止并生成文件。
+      点下面按钮可自定义每个快捷键（Chrome 官方快捷键页）。
+    </p>
+    <div class="row">
+      <button id="keysBtn" style="width:auto">自定义快捷键</button>
+    </div>
   </section>
 </main>
 <script src="options.js"></script>

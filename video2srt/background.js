@@ -1,5 +1,6 @@
 // video2srt 后台 service worker
-// 职责：状态机管理、申请 tab 捕获、创建/关闭 offscreen 文档、兜底下载、汇总进度给 popup
+// 职责：状态机管理、申请 tab 捕获、创建/关闭 offscreen 文档、兜底下载、
+//       汇总进度给 popup 与页面悬浮面板、处理键盘快捷键命令
 'use strict';
 
 var OFFSCREEN_URL = 'offscreen/offscreen.html';
@@ -14,7 +15,8 @@ var DEFAULT_CFG = {
   bitrate: 48,
   chunkMinutes: 20,
   forceOneX: true,
-  autoStopOnEnded: false
+  autoStopOnEnded: false,
+  showPanel: true
 };
 
 async function getCfg() {
@@ -31,7 +33,18 @@ async function setState(patch) {
   var cur = await getState();
   var next = Object.assign({}, cur, patch);
   await chrome.storage.session.set(objOf(STATE_KEY, next));
+  pushPanelState(next);
   return next;
+}
+
+// 状态变化推给录制标签页的悬浮面板（无面板/页面已导航则静默忽略）
+function pushPanelState(st) {
+  if (!st || !st.tabId) return;
+  try {
+    chrome.tabs.sendMessage(st.tabId, { target: 'content', type: 'panel-state', st: st }, function () {
+      void chrome.runtime.lastError;
+    });
+  } catch (e) {}
 }
 
 function objOf(k, v) { var o = {}; o[k] = v; return o; }
@@ -154,13 +167,29 @@ async function onStartCapture() {
   var tab = tabs && tabs[0];
   if (!tab || tab.id == null) return { ok: false, error: '找不到当前标签页' };
   if (/^(chrome|edge|about|chrome-extension):/i.test(tab.url || '')) {
-    return { ok: false, error: '请在普通网页标签页（如视频号页面）中使用' };
+    return { ok: false, error: '请在普通网页标签页（如视频页）中使用' };
+  }
+
+  // 先申请捕获流（无副作用阶段）：Chrome 要求扩展在本页被「调用」过（点过工具栏图标/
+  // 弹窗按钮/快捷键）。悬浮面板按钮首次使用前没有该标记，此时自动弹出扩展弹窗引导，
+  // 用户点一次弹窗里的「开始」即完成授权，之后本页面板按钮可直接使用。
+  var streamId;
+  try {
+    streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
+  } catch (e) {
+    if (/has not been invoked/i.test(String((e && e.message) || e))) {
+      try { await chrome.action.openPopup({ windowId: tab.windowId }); } catch (_) {}
+      return {
+        ok: false,
+        error: '首次使用请点弹窗里的「开始」授权一次（或按快捷键）；之后本页的悬浮按钮即可直接用'
+      };
+    }
+    throw e;
   }
 
   var cfg = await getCfg();
   await ensureOffscreen();
   var info = await getVideoInfo(tab.id);
-  var streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
   if (cfg.forceOneX) await forceOneX(tab.id);
   if (cfg.autoStopOnEnded) await enableEndedWatch(tab.id);
 
@@ -202,7 +231,7 @@ async function onFiles(msg) {
 
 async function forceClose() {
   await closeOffscreen();
-  await setState({ state: 'idle', stage: '', detail: '', error: '', startedAt: 0, pending: [] });
+  await setState({ state: 'idle', stage: '', detail: '', error: '', startedAt: 0, pending: [], tabId: 0 });
   return { ok: true };
 }
 
@@ -223,8 +252,24 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
       switch (msg.type) {
         case 'start-capture': sendResponse(await onStartCapture()); break;
         case 'stop-capture': sendResponse(await onStopCapture()); break;
+        case 'get-panel-state': {
+          // 悬浮面板初始化时拉取当前状态；只有录制中的那个标签页显示进行中状态
+          var st = await getState();
+          sendResponse({
+            ok: true,
+            st: st,
+            recordingHere: !!(sender && sender.tab && sender.tab.id === st.tabId)
+          });
+          break;
+        }
+        case 'open-shortcuts': {
+          // 快捷键自定义页（chrome:// 页只能由扩展上下文打开）
+          await chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
+          sendResponse({ ok: true });
+          break;
+        }
         case 'reset-state':
-          sendResponse(await setState({ state: 'idle', stage: '', detail: '', error: '', startedAt: 0, pending: [] }));
+          sendResponse(await setState({ state: 'idle', stage: '', detail: '', error: '', startedAt: 0, pending: [], tabId: 0 }));
           break;
         case 'force-close': sendResponse(await forceClose()); break;
         case 'video-ended': sendResponse(await onVideoEnded()); break;
@@ -250,6 +295,18 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     }
   })();
   return true;
+});
+
+// 键盘快捷键（用户可在 chrome://extensions/shortcuts 自定义按键）
+chrome.commands.onCommand.addListener(function (command) {
+  (async function () {
+    try {
+      if (command === 'start-record') await onStartCapture();
+      else if (command === 'stop-record') await onStopCapture();
+    } catch (e) { /* 快捷键路径无 UI 可展示错误，写入状态 */
+      try { await setState({ state: 'error', error: String((e && e.message) || e), stage: '', pending: [] }); } catch (_) {}
+    }
+  })();
 });
 
 // 兜底下载路径的完成跟踪（offscreen 直接下载时它自己跟踪，不经这里）

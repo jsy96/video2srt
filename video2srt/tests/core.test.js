@@ -75,6 +75,32 @@ ok('buildSrtEstimated 均分时间轴且单调', function () {
   });
 });
 
+ok('buildSrtEstimatedPieces 多段顺序编号且不越段界', function () {
+  var srt = V2S.buildSrtEstimatedPieces([
+    { text: '第一段第一句。第一段第二句。', start: 0, end: 25 },
+    { text: '第二段第一句。第二段第二句。', start: 25, end: 50 }
+  ]);
+  var blocks = srt.trim().split('\n\n');
+  assert.strictEqual(blocks.length, 4, '四句字幕');
+  // 编号跨段连续
+  blocks.forEach(function (b, i) {
+    assert.ok(b.indexOf((i + 1) + '\n') === 0, '块 ' + i + ' 编号应为 ' + (i + 1));
+  });
+  // 每句时间都落在自己段的 [start,end] 窗口内
+  function secOf(ts) {
+    return (+ts.slice(0, 2)) * 3600 + (+ts.slice(3, 5)) * 60 + (+ts.slice(6, 8)) + (+ts.slice(9, 12)) / 1000;
+  }
+  blocks.forEach(function (b, i) {
+    var line = b.split('\n')[1].split(' --> ');
+    var a = secOf(line[0]), z = secOf(line[1]);
+    var segStart = i < 2 ? 0 : 25, segEnd = i < 2 ? 25 : 50;
+    assert.ok(a >= segStart - 0.001 && z <= segEnd + 0.001, '块 ' + i + ' 时间应限制在段内：' + a + '~' + z);
+  });
+  // 空段被跳过、空结果返回空串
+  assert.strictEqual(V2S.buildSrtEstimatedPieces([]), '');
+  assert.strictEqual(V2S.buildSrtEstimatedPieces([{ text: ' ', start: 0, end: 5 }]), '');
+});
+
 ok('splitSentences 长句按逗号二次切分', function () {
   var sents = V2S.splitSentences('这是一个非常非常非常非常非常非常非常非常长的句子需要被切开，后半段还有内容。短句。', 20);
   assert.ok(sents.length >= 2);

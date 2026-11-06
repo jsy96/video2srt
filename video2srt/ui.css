@@ -55,7 +55,20 @@ button.primary {
   padding: 10px;
 }
 button.primary:hover:not(:disabled) { background: var(--brand-dark); }
+button.danger {
+  width: 100%;
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+  font-weight: 600;
+  padding: 10px;
+}
+button.danger:hover:not(:disabled) { background: #b23649; }
 button:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* 弹窗双按钮行（开始 / 结束） */
+.btn-row { display: flex; gap: 8px; }
+.btn-row button { flex: 1; }
 
 .row { margin-top: 10px; display: flex; gap: 12px; flex-wrap: wrap; }
 .row a { color: var(--brand); font-size: 12px; text-decoration: none; }
