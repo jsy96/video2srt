@@ -107,23 +107,11 @@ async function startCapture(msg) {
       throw new Error('AudioContext 未能运行');
     }
 
-    // 实时转写抽头：从同一 16k 单声道源并接 ScriptProcessor 收 PCM；
-    // 连到零增益节点保证被音频图拉动。已配置转写 API 才启用。
+    // 实时转写抽头（已配置转写 API 才启用）：优先 AudioWorklet（无废弃告警），
+    // 老环境失败时退回 ScriptProcessor（控制台会有 deprecation 告警，功能不受影响）
     if (curCfg && curCfg.apiKey && curCfg.baseUrl) {
-      try {
-        tapNode = audioCtx.createScriptProcessor(4096, 1, 1);
-        var mute = audioCtx.createGain();
-        mute.gain.value = 0;
-        src.connect(tapNode);
-        tapNode.connect(mute);
-        mute.connect(audioCtx.destination);
-        tapNode.onaudioprocess = function (e) {
-          var seg = V2S.floatToInt16(e.inputBuffer.getChannelData(0));
-          if (seg.length) { pcmLiveChunks.push(seg); pcmLiveLen += seg.length; }
-        };
-        liveOn = true;
-        liveTimer = setInterval(liveTick, 2000);
-      } catch (e) { liveStop(); }
+      liveOn = await attachTap(src);
+      if (liveOn) liveTimer = setInterval(liveTick, 2000);
     }
   } catch (e) {
     try { if (audioCtx) await audioCtx.close(); } catch (_) {}
@@ -253,6 +241,36 @@ function liveStop() {
   liveOn = false;
   if (liveTimer) { clearInterval(liveTimer); liveTimer = 0; }
   if (tapNode) { try { tapNode.disconnect(); } catch (e) {} tapNode = null; }
+}
+
+// 给 16k 音频图并接 PCM 抽头，成功返回 true
+async function attachTap(src) {
+  function onPcm(f32) {
+    var seg = V2S.floatToInt16(f32);
+    if (seg.length) { pcmLiveChunks.push(seg); pcmLiveLen += seg.length; }
+  }
+  try {
+    await audioCtx.audioWorklet.addModule(chrome.runtime.getURL('pcm-tap-worklet.js'));
+    var node = new AudioWorkletNode(audioCtx, 'pcm-tap', { numberOfInputs: 1, numberOfOutputs: 0 });
+    node.port.onmessage = function (e) { onPcm(e.data); };
+    src.connect(node);
+    tapNode = node;
+    return true;
+  } catch (e) { /* 继续尝试兜底方案 */ }
+  try {
+    var sp = audioCtx.createScriptProcessor(4096, 1, 1);
+    var mute = audioCtx.createGain();
+    mute.gain.value = 0;
+    src.connect(sp);
+    sp.connect(mute);
+    mute.connect(audioCtx.destination);
+    sp.onaudioprocess = function (e) { onPcm(e.inputBuffer.getChannelData(0)); };
+    tapNode = sp;
+    return true;
+  } catch (e) {
+    liveStop();
+    return false;
+  }
 }
 
 // 从分块里拼出 [a,b) 样本区间（一次线性扫描，不整条拼接）

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "视频录音转文字 video2srt",
-  "version": "1.0.261106.10",
+  "version": "1.0.261106.11",
   "description": "录制任意网页视频的声音（B站、腾讯视频、视频号网页版等），导出 MP3，并调用转写 API 生成 SRT 字幕，自动下载到本地。控制面板固定在侧边栏，结果实时显示；快捷键可自定义。",
   "permissions": ["tabCapture", "offscreen", "downloads", "storage", "scripting", "sidePanel", "contextMenus"],
   "host_permissions": ["<all_urls>"],

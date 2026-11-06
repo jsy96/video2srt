@@ -4,6 +4,11 @@
 
 ## 更新记录
 
+- **2026-11-06　v1.0.261106-11　PCM 抽头迁移 AudioWorklet（消除废弃告警）**
+  - 实时转写抽头由已废弃的 `ScriptProcessorNode` 迁移到 `AudioWorkletNode`：worklet 代码放真实文件 `offscreen/pcm-tap-worklet.js`（非 blob URL，符合 MV3 CSP），攒 4096 点发给主线程转 Int16
+  - worklet 不可用的老环境自动退回 ScriptProcessor（仅此时才可能出现 deprecation 告警，功能不受影响）
+  - 起因：老金在控制台看到 `The ScriptProcessorNode is deprecated` 告警
+
 - **2026-11-06　v1.0.261106-10　边录边转：录制期间实时出字 + 快捷键默认值更新**
   - **实时转写重构**：16k 音频图并接 PCM 抽头（ScriptProcessor），录制期间每攒约 25s 在静音处切段**立即送转写**，结果实时推到面板编辑框——**录制中就能看到文字逐段出现**（此前只在停止后的分段转写阶段流式出字，短于 40s 的录音完全没有过程显示）
   - 停止时：等在途一段 → 补转尾巴（>2s 才转）→ 汇总最终 SRT；实时路径直接用抽头 PCM 编码 MP3，省一遍 webm 解码（内存峰值减半）
