@@ -27,8 +27,16 @@
     <a href="#" id="forceLink" hidden>强制结束</a>
     <a href="#" id="clearLink" hidden>清除状态</a>
   </div>
+  <section id="result" hidden>
+    <div class="btn-row">
+      <button id="copySrtBtn" disabled>复制 SRT</button>
+      <button id="copyTextBtn" disabled>仅复制文字</button>
+    </div>
+    <textarea id="srtBox" spellcheck="false" placeholder="识别结果会在转写时逐段显示在这里，可直接编辑后再复制"></textarea>
+  </section>
   <p class="cfg" id="cfgLine"></p>
-  <p class="tip">先在标签页里播放视频，再点「开始」。录制与播放同步进行，中途别拖进度条；播完点「结束」。本面板固定在侧边栏始终可见；用快捷键也能直接开始/结束（按键可在「快捷键」里自定义）。</p>
+  <p class="tip">任意网页视频都能录制：先在标签页里播放视频，再点「开始」。录制与播放同步进行，中途别拖进度条；播完点「结束」。本面板固定在侧边栏始终可见；用快捷键也能直接开始/结束（按键可在「快捷键」里自定义）。</p>
+  <script src="../offscreen/core.js"></script>
   <script src="sidepanel.js"></script>
 </body>
 </html>

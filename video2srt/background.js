@@ -9,6 +9,7 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(functi
 var OFFSCREEN_URL = 'offscreen/offscreen.html';
 var STATE_KEY = 'v2s_state';
 var CFG_KEY = 'v2s_cfg';
+var LAST_SRT_KEY = 'v2s_last_srt';   // 最近一次识别结果原文（面板显示/复制用，storage.local 持久）
 // 与 options.js 中的 DEFAULT_CFG 保持一致
 var DEFAULT_CFG = {
   baseUrl: 'https://api.siliconflow.cn/v1',
@@ -180,6 +181,7 @@ async function onStartCapture() {
   }
 
   var cfg = await getCfg();
+  await chrome.storage.local.remove(LAST_SRT_KEY);   // 新一轮录制，旧识别结果不再显示
   await ensureOffscreen();
   var info = await getVideoInfo(tab.id);
   if (cfg.forceOneX) await forceOneX(tab.id);
@@ -199,6 +201,7 @@ async function onStopCapture() {
 }
 
 async function onFiles(msg) {
+  if (msg.srt) await chrome.storage.local.set(objOf(LAST_SRT_KEY, msg.srt));
   var ids = [];
   var files = msg.files || [];
   for (var i = 0; i < files.length; i++) {
@@ -251,15 +254,19 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
           break;
         }
         case 'reset-state':
+          await chrome.storage.local.remove(LAST_SRT_KEY);
           sendResponse(await setState({ state: 'idle', stage: '', detail: '', error: '', startedAt: 0, pending: [] }));
           break;
         case 'force-close': sendResponse(await forceClose()); break;
         case 'video-ended': sendResponse(await onVideoEnded()); break;
         case 'offscreen-progress':
+          // 分段转写的部分结果即时写库 → 侧边栏面板实时滚动显示
+          if (msg.partialSrt) await chrome.storage.local.set(objOf(LAST_SRT_KEY, msg.partialSrt));
           sendResponse(await setState({ stage: msg.stage || '', detail: msg.detail || '' }));
           break;
         case 'offscreen-files': sendResponse(await onFiles(msg)); break;
         case 'offscreen-done-direct': {
+          if (msg.srt) await chrome.storage.local.set(objOf(LAST_SRT_KEY, msg.srt));
           await setState({ state: 'done', stage: '', detail: msg.note || '', error: '', pending: [], startedAt: 0 });
           await closeOffscreen();
           sendResponse({ ok: true });

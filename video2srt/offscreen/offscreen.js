@@ -5,6 +5,7 @@
 'use strict';
 
 var captureStream = null;   // getUserMedia 拿到的 tab 捕获流（音频轨保活用）
+var playbackEl = null;      // 捕获音频回放元素：tabCapture 会把标签页静音，靠它让用户照常听声
 var audioCtx = null;        // 16k 单声道降采样音频图
 var recorder = null;
 var recordChunks = [];
@@ -25,11 +26,10 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
   return true;
 });
 
-function postProgress(stage, detail) {
-  chrome.runtime.sendMessage(
-    { target: 'background', type: 'offscreen-progress', stage: stage, detail: detail || '' },
-    function () { void chrome.runtime.lastError; }
-  );
+function postProgress(stage, detail, partialSrt) {
+  var msg = { target: 'background', type: 'offscreen-progress', stage: stage, detail: detail || '' };
+  if (partialSrt) msg.partialSrt = partialSrt;   // 分段转写的部分结果 → 面板实时显示
+  chrome.runtime.sendMessage(msg, function () { void chrome.runtime.lastError; });
 }
 
 async function startCapture(msg) {
@@ -45,6 +45,13 @@ async function startCapture(msg) {
     video: { mandatory: m }
   });
   captureStream.getVideoTracks().forEach(function (t) { t.stop(); });
+
+  // 关键：tabCapture 会把被捕获标签页静音（声音全部进捕获流），不回放用户就听不到——
+  // 按 Chrome 官方 tab-capture 示例的做法，在本文档里把捕获流原样播出来；
+  // 录的是降采样流（recordStream），回放用原始流，音质不受影响，也不会回录（回放不经过被捕获标签页）
+  playbackEl = new Audio();
+  playbackEl.srcObject = new MediaStream(captureStream.getAudioTracks());
+  try { await playbackEl.play(); } catch (e) { /* 个别环境 autoplay 受限时静默失败，不影响录制 */ }
 
   // 首选：经 16k 单声道音频图录制（体积小、解码省内存）；失败则回退直接录原始音轨
   var recordStream = captureStream;
@@ -130,9 +137,9 @@ async function finalize() {
   var base = V2S.buildBaseName(meta && meta.title);
   var files = [{ url: URL.createObjectURL(mp3Blob), filename: '视频转写/' + base + '.mp3' }];
   var note = '';
+  var srtText = null;
 
   if (curCfg && curCfg.apiKey && curCfg.baseUrl) {
-    var srtText = null;
     try {
       srtText = await produceSrt(pcm16, durSec, postProgress);
     } catch (e) {
@@ -148,7 +155,8 @@ async function finalize() {
     note = '未配置转写 API，本次仅导出 MP3（可在扩展设置里配置）';
   }
 
-  await downloadFiles(files, note);
+  // srtText 原文（无 BOM）随消息带给后台，供侧边栏面板显示与复制
+  await downloadFiles(files, note, srtText);
 }
 
 // 分段转写并合并为一条 SRT —— 精确时间轴策略：
@@ -181,31 +189,35 @@ async function produceSrt(pcm16, durSec, progress) {
   var probe = await transcribeBlob(encodeMp3(pcm16.subarray(0, probeEnd), sr, kbps));
 
   if (probe.timed) {
-    // 模型支持分段 → 大段转写、精确时间戳
+    // 模型支持分段 → 大段转写、精确时间戳；每段完成即推送部分结果，面板实时滚动显示
     var segs = probe.segments.map(function (s) { return { start: s.start, end: s.end, text: s.text }; });
+    progress('转写中（第 1 段，精确时间戳）…', '', V2S.buildSrtTimed(segs, offset, maxEnd));
     var rest = splitPieces(pcm16, sr, bigChunkSec, probeEnd);
     for (var i = 0; i < rest.length; i++) {
-      progress('转写中（第 ' + (i + 1) + '/' + rest.length + ' 段，精确时间戳）…', '');
+      progress('转写中（第 ' + (i + 2) + '/' + (rest.length + 1) + ' 段，精确时间戳）…', '');
       var rb = await transcribeBlob(encodeMp3(pcm16.subarray(rest[i].a, rest[i].b), sr, kbps));
       for (var j = 0; j < rb.segments.length; j++) {
         segs.push({ start: rb.segments[j].start + rest[i].t0, end: rb.segments[j].end + rest[i].t0, text: rb.segments[j].text });
       }
+      progress('转写中（第 ' + (i + 2) + '/' + (rest.length + 1) + ' 段，精确时间戳）…', '', V2S.buildSrtTimed(segs, offset, maxEnd));
     }
     if (segs.length) return V2S.buildSrtTimed(segs, offset, maxEnd);
     throw new Error('转写结果为空');
   }
 
-  // 纯文本模型 → 25s 细分段，误差限制在段内
+  // 纯文本模型 → 25s 细分段，误差限制在段内；同样每段推送部分结果
   var textPieces = [{ text: String(probe.text || ''), start: offset, end: offset + probeEnd / sr }];
+  progress('转写中（第 1 段，细分估算时间轴）…', '', V2S.buildSrtEstimatedPieces(textPieces));
   var fineRest = splitPieces(pcm16, sr, PROBE_SEC, probeEnd);
   for (var k = 0; k < fineRest.length; k++) {
-    progress('转写中（第 ' + (k + 1) + '/' + fineRest.length + ' 段，细分估算时间轴）…', '');
+    progress('转写中（第 ' + (k + 2) + '/' + (fineRest.length + 1) + ' 段，细分估算时间轴）…', '');
     var rf = await transcribeBlob(encodeMp3(pcm16.subarray(fineRest[k].a, fineRest[k].b), sr, kbps));
     textPieces.push({
       text: String(rf.text || ''),
       start: offset + fineRest[k].t0,
       end: offset + fineRest[k].b / sr
     });
+    progress('转写中（第 ' + (k + 2) + '/' + (fineRest.length + 1) + ' 段，细分估算时间轴）…', '', V2S.buildSrtEstimatedPieces(textPieces));
   }
   var srt = V2S.buildSrtEstimatedPieces(textPieces);
   if (!srt) throw new Error('转写结果为空');
@@ -283,7 +295,7 @@ function encodeMp3(pcm16, sampleRate, kbps, onProgress) {
   return new Blob(parts, { type: 'audio/mpeg' });
 }
 
-async function downloadFiles(files, note) {
+async function downloadFiles(files, note, srtText) {
   postProgress('保存文件…', note || '');
   // 首选：在本文档内直接调 downloads API（blob URL 与本文档同源，一定可用）
   var ids = [];
@@ -300,12 +312,12 @@ async function downloadFiles(files, note) {
     }
   }
   if (directOk) {
-    trackDownloadsThenDone(ids, note);
+    trackDownloadsThenDone(ids, note, srtText);
   } else {
     // 兜底：交给后台 service worker 下载并跟踪
     await new Promise(function (resolve, reject) {
       chrome.runtime.sendMessage(
-        { target: 'background', type: 'offscreen-files', files: files, note: note || '' },
+        { target: 'background', type: 'offscreen-files', files: files, note: note || '', srt: srtText || '' },
         function (resp) {
           if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
           resolve(resp);
@@ -316,11 +328,11 @@ async function downloadFiles(files, note) {
 }
 
 // 等所有下载完结（complete/interrupted）后通知后台收尾并关闭 offscreen
-function trackDownloadsThenDone(ids, note) {
+function trackDownloadsThenDone(ids, note, srtText) {
   var pending = new Set(ids);
   function reportDone() {
     chrome.runtime.sendMessage(
-      { target: 'background', type: 'offscreen-done-direct', note: note || '' },
+      { target: 'background', type: 'offscreen-done-direct', note: note || '', srt: srtText || '' },
       function () { void chrome.runtime.lastError; }
     );
   }

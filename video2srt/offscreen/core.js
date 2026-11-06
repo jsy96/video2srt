@@ -164,6 +164,25 @@
     return sanitizeFilename(title) + '_' + stamp;
   }
 
+  // SRT → 纯文本：去掉序号行、时间戳行（含 -->）与 BOM，块内多行合并为一行
+  // 供面板「仅复制文字」使用；纯数字行视为序号丢弃（字幕正文极少整行纯数字）
+  function srtToPlain(srt) {
+    var s = String(srt || '').replace(/﻿/g, '').replace(/\r/g, '');
+    var out = [];
+    var blocks = s.split(/\n{2,}/);
+    for (var i = 0; i < blocks.length; i++) {
+      var lines = blocks[i].split('\n');
+      var texts = [];
+      for (var j = 0; j < lines.length; j++) {
+        var line = lines[j].trim();
+        if (!line || line.indexOf('-->') >= 0 || /^\d+$/.test(line)) continue;
+        texts.push(line);
+      }
+      if (texts.length) out.push(texts.join(' '));
+    }
+    return out.join('\n');
+  }
+
   var api = {
     secToSrtTime: secToSrtTime,
     floatToInt16: floatToInt16,
@@ -173,7 +192,8 @@
     buildSrtEstimated: buildSrtEstimated,
     buildSrtEstimatedPieces: buildSrtEstimatedPieces,
     sanitizeFilename: sanitizeFilename,
-    buildBaseName: buildBaseName
+    buildBaseName: buildBaseName,
+    srtToPlain: srtToPlain
   };
   root.V2S = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

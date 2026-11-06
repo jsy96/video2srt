@@ -1,8 +1,10 @@
 'use strict';
 
-// 侧边栏面板（唯一控制面板）：逻辑与原 popup 一致——状态轮询 + storage.session 监听，
-// 页面常驻侧边栏，随状态变化实时刷新
+// 侧边栏面板（唯一控制面板）：状态轮询 + storage 监听，页面常驻侧边栏实时刷新；
+// 识别结果区（srtBox）转写时逐段滚动显示，支持编辑后复制
+/* global V2S */
 var STATE_KEY = 'v2s_state';
+var LAST_SRT_KEY = 'v2s_last_srt';
 var lastState = { state: 'idle' };
 
 function $(s) { return document.querySelector(s); }
@@ -109,9 +111,51 @@ $('#forceLink').addEventListener('click', function (e) {
   sendBg('force-close').then(render);
 });
 
+// ---- 识别结果区：显示 / 实时滚动 / 复制 ----
+
+function applySrt(text) {
+  var box = $('#srtBox'), sec = $('#result');
+  if (!box || !sec) return;
+  if (!text) { sec.hidden = true; box.value = ''; return; }
+  sec.hidden = false;
+  // 只在用户本就停在底部时自动跟到最新（实时滚动）；主动上翻阅读时不打扰
+  var atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 24;
+  box.value = text;
+  if (atBottom) box.scrollTop = box.scrollHeight;
+  $('#copySrtBtn').disabled = false;
+  $('#copyTextBtn').disabled = false;
+}
+
+async function loadSrt() {
+  var o = await chrome.storage.local.get(LAST_SRT_KEY);
+  applySrt(o[LAST_SRT_KEY] || '');
+}
+
+function copyWithFeedback(btn, getText) {
+  var txt = getText();
+  if (!txt) return;
+  var old = btn.textContent;
+  navigator.clipboard.writeText(txt).then(function () {
+    btn.textContent = '✓ 已复制';
+  }, function () {
+    btn.textContent = '✗ 复制失败';
+  }).then(function () {
+    setTimeout(function () { btn.textContent = old; }, 1200);
+  });
+}
+
+$('#copySrtBtn').addEventListener('click', function () {
+  copyWithFeedback(this, function () { return $('#srtBox').value; });
+});
+$('#copyTextBtn').addEventListener('click', function () {
+  copyWithFeedback(this, function () { return V2S.srtToPlain($('#srtBox').value); });
+});
+
 displayVersion();
 render();
+loadSrt();
 setInterval(function () { if (lastState.state === 'recording') render(); }, 500);
 chrome.storage.onChanged.addListener(function (ch, area) {
   if (area === 'session' && ch[STATE_KEY]) render();
+  if (area === 'local' && ch[LAST_SRT_KEY]) applySrt(ch[LAST_SRT_KEY].newValue || '');
 });

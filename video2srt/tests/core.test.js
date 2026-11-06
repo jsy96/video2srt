@@ -108,6 +108,18 @@ ok('splitSentences 长句按逗号二次切分', function () {
   assert.strictEqual(V2S.splitSentences('   ')[0], undefined);
 });
 
+ok('srtToPlain 去序号/时间戳并合并块内多行', function () {
+  var srt = '1\n00:00:01,000 --> 00:00:02,000\n第一句\n第二句同块换行\n\n' +
+            '2\n00:00:02,500 --> 00:00:04,000\n第三句\n\n' +
+            '3\n00:00:05,000 --> 00:00:06,000\n包含数字 123 的正文保留\n';
+  var plain = V2S.srtToPlain(srt);
+  assert.strictEqual(plain, '第一句 第二句同块换行\n第三句\n包含数字 123 的正文保留');
+  // BOM 与 \r\n 被清理；空串/空入参安全
+  assert.strictEqual(V2S.srtToPlain('﻿1\r\n00:00:00,000 --> 00:00:01,000\r\n你好\r\n'), '你好');
+  assert.strictEqual(V2S.srtToPlain(''), '');
+  assert.strictEqual(V2S.srtToPlain(null), '');
+});
+
 ok('findCutPoints 选在静音处', function () {
   // 30s 伪音频：全程噪声，9.5~10.5s 静音；每 10s 一个切分目标
   var sr = 1000;
