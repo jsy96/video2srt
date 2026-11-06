@@ -140,7 +140,8 @@ async function finalize() {
     }
     if (srtText) {
       // 前置 UTF-8 BOM，Windows 播放器/记事本打开中文 SRT 不乱码
-      var srtBlob = new Blob(['﻿' + srtText], { type: 'text/plain;charset=utf-8' });
+      // MIME 必须用 application/x-subrip：text/plain 会被 Chrome 下载子系统把 .srt 擅自改成 .txt（实测）
+      var srtBlob = new Blob(['﻿' + srtText], { type: 'application/x-subrip' });
       files.push({ url: URL.createObjectURL(srtBlob), filename: '视频号转写/' + base + '.srt' });
     }
   } else {

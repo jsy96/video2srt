@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "视频号录音转写 video2srt",
-  "version": "1.0.261106.1",
+  "version": "1.0.261106.2",
   "description": "录制当前标签页正在播放的视频号音频，导出 MP3，并调用转写 API 生成 SRT 字幕，自动下载到本地。",
   "permissions": ["tabCapture", "offscreen", "downloads", "storage", "scripting"],
   "host_permissions": ["<all_urls>"],

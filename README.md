@@ -4,6 +4,11 @@
 
 ## 更新记录
 
+- **2026-11-06　v1.0.261106-2　真机端到端实测通过 + 修复 SRT 扩展名被改**
+  - 在真实 Chrome 156（经 `chrome://inspect/#remote-debugging` 开远程调试 + chrome-devtools MCP autoConnect）完成端到端实测：本地 TTS 中文语音视频 → tabCapture 录制 → 16 kHz 单声道 MP3 → 硅基流动 SenseVoice 转写 → SRT/MP3 双文件自动下载；状态机流转、offscreen 自动回收、SW 控制台零报错
+  - 修复 bug：SRT 以 `text/plain` MIME 下载时，Chrome 下载子系统会把 `.srt` 擅自改名 `.txt`（真机复现；实测对比 `text/plain`→被改 `.txt`、`application/x-subrip`/`application/octet-stream`→保留 `.srt`）；已改用 SRT 注册 MIME `application/x-subrip` 并复测通过
+  - 实测结论：siliconflow `FunAudioLLM/SenseVoiceSmall` 忽略 `verbose_json` 只回纯文本 → SRT 时间轴走均分估算兜底（文字内容准确、时间为近似值）；要精确分段需换支持 segments 的模型（如 whisper-large-v3，待验证）
+  - 顺带验证：chrome:// 内部页拒录防护生效、静音录音检测报错清晰、停止时机精确（10.0 s 录制 → 9.936 s MP3）、popup 录制中/完成态渲染与版本号显示正确
 - **2026-11-06　工具链配置（不涉及扩展代码）**
   - 按 Chrome 官方《Build extensions with AI coding agents》指南配置：`chrome-devtools` MCP server（`.mcp.json`，带 `--categoryExtensions --autoConnect`，可在真实 Chrome 里安装/重载/调试扩展）
   - 安装 Modern Web Guidance 技能包（`.agents/skills/`：`chrome-extensions` + `modern-web-guidance`，Claude Code 经 `.claude/skills` 链接加载；更新用 `npx modern-web-guidance@latest update`）
@@ -36,7 +41,7 @@
 help/
 ├── README.md                 本说明文档
 └── video2srt/                Chrome 扩展项目根（在 chrome://extensions 加载这个文件夹）
-    ├── manifest.json         MV3 清单（版本号唯一来源，当前 1.0.261106.1）
+    ├── manifest.json         MV3 清单（版本号唯一来源，当前 1.0.261106.2）
     ├── background.js         Service Worker：状态机、tabCapture 授权、offscreen 生命周期、兜底下载
     ├── ui.css                popup 与选项页共享样式
     ├── content/content.js    视频号页面内容脚本：标题/播放进度读取、强制 1x、ended 监听
@@ -97,10 +102,11 @@ offscreen:
 - `offscreen/core.js` 9 组单元测试全部通过（时间戳换算、SRT 生成、静音切点、文件名清理等）
 - manifest.json 为合法 JSON；lame.min.js 为官方 lamejs 1.2.0（jsdelivr 下载，156,105 字节，含 Mp3Encoder）
 - 图标为真实生成的 PNG
+- **真机端到端（2026-11-06，Chrome 156 + chrome-devtools MCP）**：本地 TTS 中文语音视频页实测，tabCapture 捕获 → 16 kHz 单声道 MP3（9.94 s 对应 10 s 录制，时码精确）→ 硅基流动 SenseVoice 真实转写（中文内容准确）→ 带 BOM 的 SRT + MP3 双文件自动下载到「下载/视频号转写/」；静音检测、chrome:// 页拒录防护、popup 全状态渲染、offscreen 自动回收均正常
 
-**未验证（需要老金在真机 Chrome 里实测）：**
-- 端到端流程：加载扩展 → 录制视频号 → 产出 MP3/SRT。我无法在本环境运行 Chrome，首次实测可能暴露问题（如 tabCapture 音频轨行为、offscreen 里 AudioContext 状态），有问题把弹窗错误信息发我即可修
-- 各转写服务商对 `verbose_json` 的实际支持情况（不支持时会走估算时间轴，结果仍可用）
+**未验证：**
+- 视频号（channels.weixin.qq.com）真实页面（需扫码登录；捕获/转写/下载链路已由等价的普通 HTTP 视频页验证，剩余风险仅视频号页面自身的视频元素探测）
+- 转写服务商对 `verbose_json` 的支持面（已实测 siliconflow SenseVoiceSmall **不支持**、只回纯文本走估算时间轴；whisper-large-v3 等支持 segments 的模型待验证）
 
 ### 已知限制
 
