@@ -12,6 +12,21 @@ var recordChunks = [];
 var curCfg = null;
 var meta = null;            // { found, title, currentTime, duration }
 
+// ---- 录制中实时转写（live）状态 ----
+// 16k 音频图上并接 PCM 抽头，边录边攒；每约 PROBE_SEC 秒在静音处切段立刻送转写，
+// 结果实时推给面板（老金需求：编辑框要有实时转写效果）；停止时补转尾巴再汇总
+var pcmLiveChunks = [];     // 抽头采到的 Int16 分块
+var pcmLiveLen = 0;
+var tapNode = null;
+var liveOn = false;
+var liveTimer = 0;
+var liveBusy = false;
+var liveCursor = 0;         // 已切段送转写的样本游标（16k 时间轴，与解码 pcm16 一致）
+var liveTimed = null;       // 首段结果判定：模型是否返回分段时间戳
+var liveSegs = [];          // timed 模型累计段（录音时间轴，秒）
+var livePieces = [];        // 纯文本模型累计片（录音时间轴，秒）
+var liveInFlight = null;    // 进行中的切段转写 Promise（finalize 等它）
+
 chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
   if (!msg || msg.target !== 'offscreen') return;
   (async function () {
@@ -53,6 +68,10 @@ async function startCapture(msg) {
   curCfg = msg.cfg || {};
   meta = msg.info || {};
   recordChunks = [];
+  // 实时转写状态复位
+  pcmLiveChunks = []; pcmLiveLen = 0; liveCursor = 0;
+  liveTimed = null; liveSegs = []; livePieces = [];
+  liveBusy = false; liveInFlight = null; liveOn = false;
 
   var m = { chromeMediaSource: 'tab', chromeMediaSourceId: msg.streamId };
   // 与 Chrome 官方 tab capture 示例一致：音视频一起申请（audio-only 在部分版本受限），视频轨拿到后立即停掉
@@ -87,6 +106,25 @@ async function startCapture(msg) {
     } else {
       throw new Error('AudioContext 未能运行');
     }
+
+    // 实时转写抽头：从同一 16k 单声道源并接 ScriptProcessor 收 PCM；
+    // 连到零增益节点保证被音频图拉动。已配置转写 API 才启用。
+    if (curCfg && curCfg.apiKey && curCfg.baseUrl) {
+      try {
+        tapNode = audioCtx.createScriptProcessor(4096, 1, 1);
+        var mute = audioCtx.createGain();
+        mute.gain.value = 0;
+        src.connect(tapNode);
+        tapNode.connect(mute);
+        mute.connect(audioCtx.destination);
+        tapNode.onaudioprocess = function (e) {
+          var seg = V2S.floatToInt16(e.inputBuffer.getChannelData(0));
+          if (seg.length) { pcmLiveChunks.push(seg); pcmLiveLen += seg.length; }
+        };
+        liveOn = true;
+        liveTimer = setInterval(liveTick, 2000);
+      } catch (e) { liveStop(); }
+    }
   } catch (e) {
     try { if (audioCtx) await audioCtx.close(); } catch (_) {}
     audioCtx = null;
@@ -111,6 +149,7 @@ async function requestStop() {
 
 function onRecorderStopped() {
   recorder = null;
+  liveStop();   // 停掉抽头与定时器（PCM 分块留给 finalize 汇总用）
   // 关掉音频图，但保留 captureStream 音频轨：offscreen 文档靠它存活到下载结束
   if (audioCtx) { try { audioCtx.close(); } catch (_) {} audioCtx = null; }
   finalize().catch(function (e) {
@@ -122,23 +161,30 @@ function onRecorderStopped() {
 }
 
 async function finalize() {
-  postProgress('解码录音…');
-  var blob = new Blob(recordChunks, { type: 'audio/webm' });
-  recordChunks = [];
-  if (!blob.size) throw new Error('未录到音频：请确认录制期间视频在播放且未静音');
+  var usedLive = pcmLiveLen > 0;   // 实时转写开启且抽头有数据 → 直接用抽头 PCM，免一遍 webm 解码
+  var pcm16;
+  if (usedLive) {
+    pcm16 = sliceLive(0, pcmLiveLen);
+    pcmLiveChunks = [];
+  } else {
+    postProgress('解码录音…');
+    var blob = new Blob(recordChunks, { type: 'audio/webm' });
+    recordChunks = [];
+    if (!blob.size) throw new Error('未录到音频：请确认录制期间视频在播放且未静音');
 
-  // 解码（webm/opus）→ 统一重采样为 16kHz 单声道
-  var ab = await blob.arrayBuffer();
-  var decodeCtx = new OfflineAudioContext(1, 1, 48000);
-  var decoded = await decodeCtx.decodeAudioData(ab);
-  var targetLen = Math.max(1, Math.ceil(decoded.duration * 16000));
-  var off = new OfflineAudioContext(1, targetLen, 16000);
-  var srcNode = off.createBufferSource();
-  srcNode.buffer = decoded;
-  srcNode.connect(off.destination);
-  srcNode.start(0);
-  var monoBuf = await off.startRendering();
-  var pcm16 = V2S.floatToInt16(monoBuf.getChannelData(0));
+    // 解码（webm/opus）→ 统一重采样为 16kHz 单声道
+    var ab = await blob.arrayBuffer();
+    var decodeCtx = new OfflineAudioContext(1, 1, 48000);
+    var decoded = await decodeCtx.decodeAudioData(ab);
+    var targetLen = Math.max(1, Math.ceil(decoded.duration * 16000));
+    var off = new OfflineAudioContext(1, targetLen, 16000);
+    var srcNode = off.createBufferSource();
+    srcNode.buffer = decoded;
+    srcNode.connect(off.destination);
+    srcNode.start(0);
+    var monoBuf = await off.startRendering();
+    pcm16 = V2S.floatToInt16(monoBuf.getChannelData(0));
+  }
 
   // 静音检查（抽样峰值）
   var peak = 0;
@@ -160,9 +206,21 @@ async function finalize() {
 
   if (curCfg && curCfg.apiKey && curCfg.baseUrl) {
     try {
-      srtText = await produceSrt(pcm16, durSec, postProgress);
+      if (usedLive) {
+        // 实时路径：录制期间已分段转写了 [0, liveCursor)，等在途一段完成后补转尾巴再汇总
+        if (liveInFlight) await liveInFlight;
+        if (pcm16.length - liveCursor > 16000 * 2) {
+          postProgress('转写收尾段…', '');
+          await transcribeRange(pcm16.subarray(liveCursor), liveCursor, pcm16.length);
+        }
+        srtText = assembleLiveSrt();
+        if (!srtText) throw new Error('转写结果为空');
+      } else {
+        srtText = await produceSrt(pcm16, durSec, postProgress);
+      }
     } catch (e) {
-      note = '转写失败：' + String((e && e.message) || e) + '（MP3 已保存，可手动转写）';
+      note = '转写失败：' + String((e && e.message) || e) +
+        ((curCfg && curCfg.autoSaveDialog) ? '（MP3 已保存，可手动转写）' : '（MP3 可点面板「保存 MP3/SRT」按钮取出）');
     }
     if (srtText) {
       // 前置 UTF-8 BOM，Windows 播放器/记事本打开中文 SRT 不乱码
@@ -187,6 +245,88 @@ async function finalize() {
       function () { void chrome.runtime.lastError; }
     );
   }
+}
+
+// ---- 实时转写（录制期间）辅助 ----
+
+function liveStop() {
+  liveOn = false;
+  if (liveTimer) { clearInterval(liveTimer); liveTimer = 0; }
+  if (tapNode) { try { tapNode.disconnect(); } catch (e) {} tapNode = null; }
+}
+
+// 从分块里拼出 [a,b) 样本区间（一次线性扫描，不整条拼接）
+function sliceLive(a, b) {
+  var out = new Int16Array(Math.max(0, b - a));
+  var pos = 0, done = 0;
+  for (var i = 0; i < pcmLiveChunks.length && done < out.length; i++) {
+    var ch = pcmLiveChunks[i];
+    var chStart = pos, chEnd = pos + ch.length;
+    pos = chEnd;
+    var lo = Math.max(a, chStart), hi = Math.min(b, chEnd);
+    if (hi > lo) { out.set(ch.subarray(lo - chStart, hi - chStart), done); done += hi - lo; }
+  }
+  return done === out.length ? out : out.subarray(0, done);
+}
+
+// 转写录音时间轴上 [a,b) 样本段，结果并入累计结构；返回是否拿到了内容
+async function transcribeRange(pcmSlice, a, b) {
+  var kbps = Number(curCfg.bitrate) || 48;
+  var r = await transcribeBlob(encodeMp3(pcmSlice, 16000, kbps));
+  if (liveTimed === null) liveTimed = r.timed;   // 首段即探测模型能力
+  var got = false;
+  if (r.timed && r.segments.length) {
+    for (var i = 0; i < r.segments.length; i++) {
+      var s = r.segments[i];
+      liveSegs.push({ start: s.start + a / 16000, end: s.end + a / 16000, text: s.text });
+    }
+    got = true;
+  } else if (String(r.text || '').trim()) {
+    livePieces.push({ text: String(r.text), start: a / 16000, end: b / 16000 });
+    got = true;
+  }
+  return got;
+}
+
+// 已累计内容 → SRT（时间轴平移到视频内位置）
+function assembleLiveSrt() {
+  var offset = Math.max(0, +((meta && meta.currentTime) || 0) || 0);
+  var maxEnd = (meta && +meta.duration > 0) ? +meta.duration : 0;
+  if (liveTimed) return liveSegs.length ? V2S.buildSrtTimed(liveSegs, offset, maxEnd) : '';
+  var ps = livePieces.map(function (p) { return { text: p.text, start: p.start + offset, end: p.end + offset }; });
+  return V2S.buildSrtEstimatedPieces(ps);
+}
+
+function pushLivePartial() {
+  var srt = assembleLiveSrt();
+  if (srt) {
+    postProgress('', '实时转写已出 ' + (liveTimed ? liveSegs.length : livePieces.length) + ' 段', srt);
+  }
+}
+
+// 每 2s 检查：攒够约 PROBE_SEC 秒就在静音处切段立刻转写（同时最多一段在途，失败跳过该段）
+function liveTick() {
+  if (!liveOn || liveBusy || !recorder) return;
+  var sr = 16000;
+  if (pcmLiveLen - liveCursor < PROBE_SEC * sr) return;
+  var winA = liveCursor;
+  var win = sliceLive(winA, Math.min(pcmLiveLen, winA + (PROBE_SEC + 8) * sr));
+  var cut = 0;
+  try {
+    var cuts = V2S.findCutPoints(win, sr, PROBE_SEC, 8);
+    if (cuts.length) cut = winA + cuts[0];
+  } catch (e) {}
+  if (!(cut > winA)) cut = Math.min(pcmLiveLen - sr * 2, liveCursor + PROBE_SEC * sr);   // 找不到静音就按 25s 硬切
+  if (!(cut > winA)) return;
+  var a = liveCursor, b = Math.max(cut, a + sr * 5);
+  liveCursor = b;
+  liveBusy = true;
+  liveInFlight = transcribeRange(sliceLive(a, b), a, b).then(function (got) {
+    if (got) pushLivePartial();
+  }).catch(function () { /* 单段失败跳过，继续攒下一段 */ }).then(function () {
+    liveBusy = false;
+    liveInFlight = null;
+  });
 }
 
 // 分段转写并合并为一条 SRT —— 精确时间轴策略：

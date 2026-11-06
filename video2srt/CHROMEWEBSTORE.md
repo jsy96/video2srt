@@ -75,7 +75,7 @@ Chinese (Simplified)
 | scripting | permissions | 录制开始时在目标页面读取视频标题与播放进度，用于文件命名和字幕时间轴对齐；内容脚本未覆盖页面的兜底方案。 |
 | sidePanel | permissions | 唯一控制面板以浏览器侧边栏形式常驻（始终可见、可随时收起），替代网页内悬浮元素，不遮挡视频画面。 |
 | contextMenus | permissions | 在页面右键菜单提供「开始/结束录制」入口；该点击同时构成 Chrome 要求的标签页捕获授权（与快捷键等价）。不读取页面内容。 |
-| commands | permissions（manifest 声明） | 提供开始/结束录制的键盘快捷键，用户可在 chrome://extensions/shortcuts 自定义。 |
+| commands | permissions（manifest 声明） | 提供键盘快捷键：默认 Alt+Q 开关面板、Alt+S 开始录制、Alt+E 结束，用户可在 chrome://extensions/shortcuts 自定义。 |
 | content_scripts 匹配所有 http(s) 网站 + `<all_urls>` host 权限 | host_permissions | 在用户观看视频的任意网页读取视频标题与播放进度（用于文件命名和字幕时间轴对齐）、把倍速强制回 1x（保证时间轴准确）、监听播放结束（可选自动停止）。内容脚本不显示任何界面。扩展不收集浏览数据。 |
 
 ## Privacy & Data Use
@@ -147,6 +147,7 @@ cd video2srt && bash tools/package.sh   # 产出 ../video2srt-v<版本>.zip
 
 | Version | Date | Changes | Status |
 |---------|------|---------|--------|
+| 1.0.261106.10 | 2026-11-06 | 边录边转：录制期间每 ~25s 切段即时转写，识别结果在面板实时逐段出现；停止后补转尾巴汇总；快捷键默认值改为 Alt+Q/S/E；结果区按钮改品牌色样式 | Draft（未提交） |
 | 1.0.261106.9 | 2026-11-06 | 保存模式定稿：单一开关「结束后自动弹框保存 MP3/SRT」（默认关）；不开启则不自动写盘，录完在面板点「保存 MP3/SRT」手动弹框保存两个文件 | Draft（未提交） |
 | 1.0.261106.8 | 2026-11-06 | 新增「结束后弹框保存 MP3/SRT」两个设置开关；面板新增「保存 MP3/SRT」按钮（MP3 取最近录制暂存、SRT 保存编辑框当前内容，产物暂存 IndexedDB）；修结果清空后按钮未复位 | Draft（未提交） |
 | 1.0.261106.7 | 2026-11-06 | 面板布局改为撑满侧栏全高（flex），识别结果编辑框占据剩余全部高度 | Draft（未提交） |

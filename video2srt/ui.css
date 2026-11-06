@@ -85,7 +85,17 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 
 /* ---------- 侧边栏面板：识别结果区 ---------- */
 #result { margin-top: 10px; flex: 1; min-height: 0; display: flex; flex-direction: column; }
-#result .btn-row { margin-bottom: 8px; flex: none; }
+#result .btn-row { margin-bottom: 8px; flex: none; gap: 6px; }
+#result .btn-row button {
+  background: #f6f5ff;
+  border: 1px solid var(--brand);
+  color: var(--brand);
+  font-weight: 600;
+  font-size: 12px;
+  padding: 7px 4px;
+  white-space: nowrap;
+}
+#result .btn-row button:hover:not(:disabled) { background: var(--brand); color: #fff; }
 #srtBox {
   flex: 1 1 auto; min-height: 220px; width: 100%; resize: none;
   font: 12px/1.5 Consolas, "Courier New", monospace;
